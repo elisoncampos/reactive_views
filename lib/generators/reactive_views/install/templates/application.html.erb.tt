@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title><%= content_for(:title) || "ReactiveViews App" %></title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <%%= csrf_meta_tags %>
+    <%%= csp_meta_tag %>
+
+    <%%= stylesheet_link_tag "application", "data-turbo-track": "reload" %>
+    <%% if Rails.root.join("app", "javascript", "application.js").exist? -%>
+    <%%= javascript_importmap_tags %>
+    <%% end -%>
+    <%%= reactive_views_script_tag %>
+  </head>
+
+  <body>
+    <%%= yield %>
+  </body>
+</html>

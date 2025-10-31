@@ -1,0 +1,9 @@
+// app/javascript/application.js
+// ReactiveViews entrypoint
+
+console.log("Vite ⚡️ Rails");
+
+// Visit the guide for more information: https://vite-ruby.netlify.app/guide/rails
+
+// Import the ReactiveViews boot logic
+import "./reactive_views/boot.ts";

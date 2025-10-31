@@ -1,0 +1,4 @@
+export default function ExampleHello({ name = "world" }: { name?: string }) {
+  return <div>Hello, {name}!</div>;
+}
+
