@@ -13,6 +13,11 @@ module ReactiveViews
       class_option :boot_path, type: :string, default: nil, desc: "Override default boot module path in initializer"
       class_option :with_example, type: :boolean, default: false, desc: "Generate example component and ERB usage hint"
 
+      def initialize(*args)
+        super
+        @package_manager = detect_package_manager
+      end
+
       def display_intro
         say "\n[ReactiveViews] Generating install files...", :green
         say "If any file already exists, you'll be prompted to overwrite or skip it. This provides full safety and control for your app setup!", :cyan
@@ -27,12 +32,12 @@ module ReactiveViews
 
       def configure_vite_port
         vite_config_path = "config/vite.json"
-        
+
         if File.exist?(vite_config_path)
           begin
             config = JSON.parse(File.read(vite_config_path))
             config["development"] ||= {}
-            
+
             # Only set port if not already configured
             unless config["development"]["port"]
               config["development"]["port"] = 5174
@@ -81,16 +86,21 @@ module ReactiveViews
         if react_installed
           say_status :skip, "React already installed"
         else
-          say "\nReactiveViews requires React to work.", :yellow
+          say ""
+          say "ReactiveViews requires React to work.", :yellow
           response = ask("Install React dependencies now? [Yn] ", :yellow)
           # Default to yes if no response (non-interactive mode or empty input)
           if response.nil? || response.to_s.match?(/^y|^$/i)
             say_status :run, "Installing React dependencies"
-            run "npm install react react-dom @types/react @types/react-dom @vitejs/plugin-react", verbose: false
+            install_cmd = install_command_for(@package_manager)
+            run "#{@package_manager} #{install_cmd} react react-dom @types/react @types/react-dom @vitejs/plugin-react", verbose: false
           else
-            say "\n⚠️  Please install React manually when ready:", :yellow
-            say "   npm install react react-dom @types/react @types/react-dom @vitejs/plugin-react", :cyan
-            say "\nWithout React, ReactiveViews components won't hydrate on the client.", :yellow
+            say ""
+            say "⚠️  Please install React manually when ready:", :yellow
+            install_cmd = install_command_for(@package_manager)
+            say "   #{@package_manager} #{install_cmd} react react-dom @types/react @types/react-dom @vitejs/plugin-react", :cyan
+            say ""
+            say "Without React, ReactiveViews components won't hydrate on the client.", :yellow
           end
         end
 
@@ -164,7 +174,7 @@ module ReactiveViews
         # Create or update app/javascript/entrypoints/application.js to import the boot script
         # ViteRails uses entrypoints/ subdirectory by convention
         entrypoint_path = "app/javascript/entrypoints/application.js"
-        
+
         if File.exist?(entrypoint_path)
           # Check if it already imports the boot script
           content = File.read(entrypoint_path)
@@ -232,50 +242,77 @@ module ReactiveViews
         if File.exist?(layout_path)
           layout_content = File.read(layout_path)
 
-          # Check if reactive_views_script_tag is already present
-          if layout_content.include?("reactive_views_script_tag")
+          # Check for old vite tags that should be replaced
+          # Use more robust regex patterns to catch all variations
+          has_old_tags = layout_content.match?(/<%=\s*vite_client_tag.*?%>/m) ||
+                         layout_content.match?(/<%=\s*vite_javascript_tag.*?%>/m) ||
+                         layout_content.match?(/<%=\s*vite_typescript_tag.*?%>/m)
+
+          # Check if reactive_views_script_tag is already present (with flexible whitespace)
+          has_reactive_views_tag = layout_content.match?(/<%=\s*reactive_views_script_tag\s*%>/)
+
+          if has_reactive_views_tag && !has_old_tags
             say_status :skip, "#{layout_path} (already includes reactive_views_script_tag)", :yellow
             return
           end
 
-          # Check for old vite tags that should be replaced
-          has_old_tags = layout_content.include?("vite_client_tag") || layout_content.include?("vite_javascript_tag")
-
-          if has_old_tags
-            say "\n⚠️  Your layout includes old vite_client_tag or vite_javascript_tag calls.", :yellow
-            say "These should be replaced with the single reactive_views_script_tag helper.", :yellow
-
-            response = ask("\nWould you like to automatically update #{layout_path}? [Yn] ", :yellow)
-            if response.nil? || response.to_s.match?(/^y|^$/i)
-              # Remove old Vite tags and add new helper
-              layout_content.gsub!(/\s*<%=\s*vite_client_tag\s*%>\s*\n?/, "")
-              layout_content.gsub!(/\s*<%=\s*vite_javascript_tag\s+['"]application['"]\s*%>\s*\n?/, "")
-              layout_content.gsub!(/\s*<%=\s*vite_typescript_tag\s+['"]application['"]\s*%>\s*\n?/, "")
-
-              # Add reactive_views_script_tag before </head>
-              unless layout_content.include?("reactive_views_script_tag")
-                layout_content.sub!(/<\/head>/, "    <%= reactive_views_script_tag %>\n  </head>")
+          if has_old_tags || !has_reactive_views_tag
+            # In force mode or when explicitly updating
+            if options[:force] || has_old_tags
+              if has_old_tags
+                say ""
+                say "⚠️  Your layout includes old vite_client_tag or vite_javascript_tag calls.", :yellow
+                say "These should be replaced with the single reactive_views_script_tag helper.", :yellow
+                say ""
               end
 
-              File.write(layout_path, layout_content)
-              say_status :update, layout_path, :green
-              say "✓ Replaced old Vite tags with reactive_views_script_tag", :green
+              should_update = options[:force]
+              unless should_update
+                response = ask("Would you like to automatically update #{layout_path}? [Yn] ", :yellow)
+                should_update = response.nil? || response.to_s.match?(/^y|^$/i)
+              end
+
+              if should_update
+                # Remove all old Vite tags with robust regex patterns (multiline mode)
+                layout_content.gsub!(/\s*<%=\s*vite_client_tag.*?%>\s*\n?/m, "")
+                layout_content.gsub!(/\s*<%=\s*vite_javascript_tag.*?%>\s*\n?/m, "")
+                layout_content.gsub!(/\s*<%=\s*vite_typescript_tag.*?%>\s*\n?/m, "")
+
+                # Also remove any existing reactive_views_script_tag to avoid duplicates
+                layout_content.gsub!(/\s*<%=\s*reactive_views_script_tag\s*%>\s*\n?/m, "")
+
+                # Add reactive_views_script_tag before </head>
+                if layout_content.include?("</head>")
+                  layout_content.sub!(/<\/head>/, "    <%= reactive_views_script_tag %>\n  </head>")
+                  File.write(layout_path, layout_content)
+                  say_status :update, layout_path, :green
+                  say "✓ Updated layout with reactive_views_script_tag", :green
+                else
+                  say_status :skip, "#{layout_path} (couldn't find </head> tag)", :yellow
+                  say ""
+                  say "Please add this to your layout's <head> section:", :yellow
+                  say "  <%= reactive_views_script_tag %>", :cyan
+                end
+              else
+                say_status :skip, "#{layout_path} (manual update required)", :yellow
+                say ""
+                say "Please add this to your layout's <head> section:", :yellow
+                say "  <%= reactive_views_script_tag %>", :cyan
+              end
             else
-              say_status :skip, "#{layout_path} (manual update required)", :yellow
-              say "\nPlease add this to your layout's <head> section:", :yellow
-              say "  <%= reactive_views_script_tag %>", :cyan
-            end
-          else
-            # No old tags, just offer to add the new helper
-            if layout_content.include?("</head>")
-              say "\nAdding reactive_views_script_tag to your layout...", :cyan
-              layout_content.sub!(/<\/head>/, "    <%= reactive_views_script_tag %>\n  </head>")
-              File.write(layout_path, layout_content)
-              say_status :update, layout_path, :green
-            else
-              say_status :skip, "#{layout_path} (couldn't find </head> tag)", :yellow
-              say "\nPlease add this to your layout's <head> section:", :yellow
-              say "  <%= reactive_views_script_tag %>", :cyan
+              # No old tags, just offer to add the new helper
+              if layout_content.include?("</head>")
+                say ""
+                say "Adding reactive_views_script_tag to your layout...", :cyan
+                layout_content.sub!(/<\/head>/, "    <%= reactive_views_script_tag %>\n  </head>")
+                File.write(layout_path, layout_content)
+                say_status :update, layout_path, :green
+              else
+                say_status :skip, "#{layout_path} (couldn't find </head> tag)", :yellow
+                say ""
+                say "Please add this to your layout's <head> section:", :yellow
+                say "  <%= reactive_views_script_tag %>", :cyan
+              end
             end
           end
         else
@@ -288,11 +325,11 @@ module ReactiveViews
         return if options[:skip_procfile]
 
         procfile_path = "Procfile.dev"
-        
+
         if File.exist?(procfile_path)
           content = File.read(procfile_path)
           processes = parse_procfile(content)
-          
+
           # Track what needs updating
           updates_needed = []
 
@@ -353,14 +390,14 @@ module ReactiveViews
 
       def add_rake_task
         rakefile_path = "lib/tasks/reactive_views.rake"
-        
+
         # Create rake task for SSR
         create_file rakefile_path, <<~RAKE
           namespace :reactive_views do
             desc "Start the ReactiveViews SSR server"
             task :ssr do
               require "reactive_views"
-              
+
               gem_root = Gem.loaded_specs["reactive_views"]&.gem_dir
               if gem_root.nil?
                 puts "Error: Could not find reactive_views gem directory"
@@ -368,7 +405,7 @@ module ReactiveViews
               end
 
               ssr_script = File.join(gem_root, "node", "ssr", "server.mjs")
-              
+
               unless File.exist?(ssr_script)
                 puts "Error: SSR server script not found at: \#{ssr_script}"
                 exit 1
@@ -382,22 +419,64 @@ module ReactiveViews
       end
 
       def check_ssr_dependencies
-        gem_root = Gem.loaded_specs["reactive_views"]&.gem_dir
-        return unless gem_root
+        # Check if SSR dependencies are already installed in the project
+        ssr_deps_installed = false
+        if File.exist?("package.json")
+          begin
+            package_json = JSON.parse(File.read("package.json"))
+            deps = package_json["dependencies"] || {}
+            dev_deps = package_json["devDependencies"] || {}
 
-        node_modules = File.join(gem_root, "node", "node_modules")
-        if Dir.exist?(node_modules)
-          say_status :skip, "SSR dependencies already installed in gem"
+            # Check if react, react-dom, and esbuild are present
+            has_react = deps.key?("react") || dev_deps.key?("react")
+            has_react_dom = deps.key?("react-dom") || dev_deps.key?("react-dom")
+            has_esbuild = deps.key?("esbuild") || dev_deps.key?("esbuild")
+
+            ssr_deps_installed = has_react && has_react_dom && has_esbuild
+          rescue JSON::ParserError
+            # If package.json is invalid, continue with prompt
+          end
+        end
+
+        if ssr_deps_installed
+          say_status :skip, "SSR dependencies already installed"
         else
-          say "\n⚠️  SSR server dependencies not installed.", :yellow
-          say "The gem needs React and esbuild in node/ for SSR.", :yellow
-          say "Run: cd #{gem_root}/node && npm install", :cyan
+          say ""
+          say "⚠️  SSR server dependencies not installed.", :yellow
+          say "The SSR server needs react, react-dom, and esbuild to render components.", :yellow
+          say ""
+          response = ask("Install SSR dependencies now? [Yn] ", :yellow)
+
+          if response.nil? || response.to_s.match?(/^y|^$/i)
+            say_status :run, "Installing SSR dependencies"
+            install_cmd = install_command_for(@package_manager)
+            # Install as dev dependencies since they're for build/SSR
+            case @package_manager
+            when "npm", "pnpm"
+              run "#{@package_manager} #{install_cmd} --save-dev esbuild", verbose: false
+            when "yarn"
+              run "#{@package_manager} #{install_cmd} --dev esbuild", verbose: false
+            end
+            say "✓ SSR dependencies installed", :green
+          else
+            say ""
+            say "⚠️  Please install SSR dependencies manually when ready:", :yellow
+            install_cmd = install_command_for(@package_manager)
+            case @package_manager
+            when "npm", "pnpm"
+              say "   #{@package_manager} #{install_cmd} --save-dev esbuild", :cyan
+            when "yarn"
+              say "   #{@package_manager} #{install_cmd} --dev esbuild", :cyan
+            end
+            say ""
+            say "Without these dependencies, the SSR server won't be able to render components.", :yellow
+          end
         end
       end
 
       def update_bin_dev
         bin_dev_path = "bin/dev"
-        
+
         # Create enhanced bin/dev script with cleanup
         enhanced_script = <<~BASH
           #!/usr/bin/env sh
@@ -445,12 +524,38 @@ module ReactiveViews
         content.each_line do |line|
           line = line.strip
           next if line.empty? || line.start_with?("#")
-          
+
           if line =~ /^([^:]+):\s*(.+)$/
             processes[$1.strip] = $2.strip
           end
         end
         processes
+      end
+
+      def detect_package_manager
+        if File.exist?("pnpm-lock.yaml")
+          "pnpm"
+        elsif File.exist?("yarn.lock")
+          "yarn"
+        elsif File.exist?("package-lock.json")
+          "npm"
+        else
+          # No lock file found, prompt user
+          say ""
+          say "No package manager lock file detected.", :yellow
+          response = ask("Which package manager would you like to use? (npm/yarn/pnpm) [npm]: ", :yellow)
+          response = response.to_s.strip.downcase
+          response.empty? ? "npm" : response
+        end
+      end
+
+      def install_command_for(package_manager)
+        case package_manager
+        when "yarn"
+          "add"
+        else
+          "install"
+        end
       end
     end
   end

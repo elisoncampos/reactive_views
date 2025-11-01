@@ -25,13 +25,31 @@ function toPath(name: string): string {
 }
 
 async function loadComponent(name: string) {
-  // Attempt both conventional locations; Vite should alias these as needed in the host app
+  // Attempt both conventional locations; try multiple filename shapes and extensions
   const rel = toPath(name);
-  try {
-    return (await import(/* @vite-ignore */ `/app/views/components/${rel}.tsx`)).default;
-  } catch (_e) {
-    return (await import(/* @vite-ignore */ `/app/javascript/components/${rel}.tsx`)).default;
+  const leaf = rel.split('/').pop() as string;
+  const bases = ['/app/views/components', '/app/javascript/components'];
+  const exts = ['.tsx', '.jsx', '.ts', '.js'];
+
+  for (const base of bases) {
+    for (const ext of exts) {
+      const candidates = [
+        `${base}/${rel}${ext}`,
+        `${base}/${rel}/index${ext}`,
+        `${base}/${rel}/${leaf}${ext}`,
+      ];
+      for (const path of candidates) {
+        try {
+          // @vite-ignore ensures Vite does not try to statically analyze this path
+          return (await import(/* @vite-ignore */ path)).default;
+        } catch (_e) {
+          // try next
+        }
+      }
+    }
   }
+
+  throw new Error(`Component not found on client: ${name}`);
 }
 
 async function hydrateAll() {

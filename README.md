@@ -164,7 +164,7 @@ In a normal `.html.erb` view, drop a React island:
 </div>
 ```
 
-Place `app/views/components/post_list.tsx`:
+Create your component at `app/views/components/post_list.tsx` (snake_case, following Rails conventions):
 
 ```tsx
 export default function PostList({
@@ -183,6 +183,74 @@ export default function PostList({
 ```
 
 On render, the gem will SSR this component and hydrate it client-side automatically.
+
+### Component Naming Conventions
+
+ReactiveViews supports multiple file naming conventions to accommodate both Rails and React/JavaScript standards. When you reference a component (e.g., `<PostList />`), the resolver automatically searches for files using all supported conventions:
+
+#### Supported Naming Patterns
+
+1. **PascalCase** (React/TypeScript standard)
+   - `PostList.tsx`
+   - `UserProfileCard.tsx`
+
+2. **snake_case** (Rails standard)
+   - `post_list.tsx`
+   - `user_profile_card.tsx`
+
+3. **camelCase** (JavaScript standard)
+   - `postList.tsx`
+   - `userProfileCard.tsx`
+
+4. **kebab-case** (Web component standard)
+   - `post-list.tsx`
+   - `user-profile-card.tsx`
+
+All naming conventions work recursively in nested directories:
+- `components/PostList.tsx`
+- `components/auth/login_form.tsx`
+- `components/users/profile/user-avatar.tsx`
+
+#### Search Priority
+
+When resolving a component like `<PostList />`, the resolver searches in this order:
+
+1. Exact match: `PostList.tsx` (original PascalCase)
+2. Rails style: `post_list.tsx` (snake_case)
+3. JS style: `postList.tsx` (camelCase)
+4. Web style: `post-list.tsx` (kebab-case)
+
+Each naming variant is tried with all supported extensions (`.tsx`, `.jsx`, `.ts`, `.js`) across all configured paths (`component_views_paths` and `component_js_paths`).
+
+#### Best Practices
+
+**Recommended:** Use **snake_case** for Rails projects:
+```
+app/views/components/
+  ├── post_list.tsx
+  ├── user_profile_card.tsx
+  └── auth/
+      └── login_form.tsx
+```
+
+This follows Rails conventions and integrates naturally with your Ruby codebase. However, you're free to use any supported convention based on your team's preferences.
+
+#### Examples
+
+All of these will be found when using `<HelloWorld />`:
+
+```
+app/views/components/HelloWorld.tsx      # PascalCase
+app/views/components/hello_world.tsx     # snake_case (recommended for Rails)
+app/views/components/helloWorld.tsx      # camelCase
+app/views/components/hello-world.tsx     # kebab-case
+
+# Nested directories work too:
+app/views/components/auth/login_form.tsx
+app/javascript/components/users/UserAvatar.tsx
+```
+
+**Note:** If multiple files with different naming conventions exist for the same component, the exact match (PascalCase) takes priority, followed by the search order listed above.
 
 ## Development
 

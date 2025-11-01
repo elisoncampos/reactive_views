@@ -12,15 +12,41 @@ module ReactiveViewsHelper
   # - Vite JavaScript entrypoint (which imports the boot script)
   def reactive_views_script_tag
     output = []
+    vite_available = defined?(ViteRails)
+
+    unless vite_available
+      if defined?(Rails) && Rails.env.development?
+        Rails.logger.warn("[ReactiveViews] vite_rails gem not detected. ReactiveViews requires vite_rails to function properly.")
+        return content_tag(:div, "⚠️ ReactiveViews requires vite_rails gem",
+                          style: "background: #fee; border: 2px solid #c00; padding: 1rem; margin: 1rem;").html_safe
+      end
+      return "".html_safe
+    end
 
     # Include Vite client tag for HMR in development
-    output << vite_client_tag if respond_to?(:vite_client_tag)
+    begin
+      if respond_to?(:vite_client_tag)
+        output << vite_client_tag
+      end
+    rescue NoMethodError => e
+      log_helper_error("vite_client_tag", e)
+    end
 
     # Include the Vite JavaScript entrypoint
     # The boot script is imported in application.js and bundled by Vite
-    output << vite_javascript_tag("application") if respond_to?(:vite_javascript_tag)
+    begin
+      if respond_to?(:vite_javascript_tag)
+        output << vite_javascript_tag("application")
+      end
+    rescue NoMethodError => e
+      log_helper_error("vite_javascript_tag", e)
+      if defined?(Rails) && Rails.env.development?
+        return content_tag(:div, "⚠️ ReactiveViews Error: vite_javascript_tag failed. Ensure vite_rails is properly installed.",
+                          style: "background: #fee; border: 2px solid #c00; padding: 1rem; margin: 1rem;").html_safe
+      end
+    end
 
-    safe_join(output, "\n")
+    output.compact.empty? ? "".html_safe : safe_join(output, "\n")
   end
 
   # @deprecated Use {#reactive_views_script_tag} instead.
@@ -33,5 +59,13 @@ module ReactiveViewsHelper
       crossorigin: "anonymous"
     )
   end
-end
 
+  private
+
+  def log_helper_error(method_name, error)
+    return unless defined?(Rails) && Rails.logger
+
+    Rails.logger.error("[ReactiveViews] Helper error: #{method_name} failed - #{error.message}")
+    Rails.logger.debug(error.backtrace.join("\n")) if Rails.logger.debug?
+  end
+end

@@ -4,6 +4,7 @@ require_relative "reactive_views/version"
 require_relative "reactive_views/configuration"
 require_relative "reactive_views/component_resolver"
 require_relative "reactive_views/renderer"
+require_relative "reactive_views/error_overlay"
 require_relative "reactive_views/tag_transformer"
 require_relative "reactive_views/helpers"
 
@@ -26,4 +27,3 @@ module ReactiveViews
   # Initialize with default configuration
   configure
 end
-
