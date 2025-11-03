@@ -24,6 +24,28 @@ function toPath(name: string): string {
   return parts.map(snake).join('/');
 }
 
+// Import all components eagerly so they are available for hydration
+const rawComponentsFromViews = import.meta.glob('../../views/components/**/*.{tsx,jsx,ts,js}', { 
+  eager: true,
+});
+const rawComponentsFromJs = import.meta.glob('../components/**/*.{tsx,jsx,ts,js}', { 
+  eager: true,
+});
+
+// Normalize paths to match the absolute aliased paths that loadComponent expects
+const componentsFromViews: Record<string, any> = {};
+const componentsFromJs: Record<string, any> = {};
+
+for (const [path, module] of Object.entries(rawComponentsFromViews)) {
+  const normalized = path.replace('../../views/components/', '/app/views/components/');
+  componentsFromViews[normalized] = (module as any).default;
+}
+
+for (const [path, module] of Object.entries(rawComponentsFromJs)) {
+  const normalized = path.replace('../components/', '/app/javascript/components/');
+  componentsFromJs[normalized] = (module as any).default;
+}
+
 async function loadComponent(name: string) {
   // Attempt both conventional locations; try multiple filename shapes and extensions
   const rel = toPath(name);
@@ -31,19 +53,31 @@ async function loadComponent(name: string) {
   const bases = ['/app/views/components', '/app/javascript/components'];
   const exts = ['.tsx', '.jsx', '.ts', '.js'];
 
+  // Combine both glob maps
+  const allComponents = { ...componentsFromViews, ...componentsFromJs };
+
+  // Try both the original name (e.g., "InteractiveCounter") and snake_case ("interactive_counter")
+  const nameVariants = [name, rel];
+  const leafVariants = [name, leaf];
+
   for (const base of bases) {
-    for (const ext of exts) {
-      const candidates = [
-        `${base}/${rel}${ext}`,
-        `${base}/${rel}/index${ext}`,
-        `${base}/${rel}/${leaf}${ext}`,
-      ];
-      for (const path of candidates) {
-        try {
-          // @vite-ignore ensures Vite does not try to statically analyze this path
-          return (await import(/* @vite-ignore */ path)).default;
-        } catch (_e) {
-          // try next
+    for (let i = 0; i < nameVariants.length; i++) {
+      const nameVar = nameVariants[i];
+      const leafVar = leafVariants[i];
+      
+      for (const ext of exts) {
+        const candidates = [
+          `${base}/${nameVar}${ext}`,
+          `${base}/${nameVar}/index${ext}`,
+          `${base}/${nameVar}/${leafVar}${ext}`,
+        ];
+        for (const path of candidates) {
+          // Check if this path exists in our glob imports
+          if (allComponents[path]) {
+            // Component is already loaded with eager: true
+            // The .default was already extracted during normalization
+            return allComponents[path];
+          }
         }
       }
     }
@@ -64,7 +98,8 @@ async function hydrateAll() {
       hydrateRoot(el, React.createElement(Comp, props));
     } catch (e) {
       if (import.meta.env?.DEV) {
-        console.error('[reactive_views] Hydration error', e);
+        console.error(`[reactive_views] Failed to hydrate component: ${component}`, e);
+        console.error(`[reactive_views] Make sure vite.config.ts has resolve.alias configured for /app/views/components and /app/javascript/components`);
       }
     }
   }
@@ -75,5 +110,3 @@ if (document.readyState === 'loading') {
 } else {
   hydrateAll();
 }
-
-

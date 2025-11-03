@@ -128,6 +128,148 @@ exports.default = Component;
   }
 }
 
+// Render a component tree with true React composition
+// treeSpec: { componentPath, props, children: [...], htmlChildren: string }
+async function renderComponentTree(treeSpec) {
+  // Load React from the project
+  const React = projectRequire("react");
+  const { renderToString } = projectRequire("react-dom/server");
+
+  // Make React available globally
+  global.React = React;
+
+  try {
+    // Build the React element tree
+    const element = await buildReactTree(treeSpec, React);
+    
+    // Render the entire tree as one
+    const html = renderToString(element);
+    
+    return html;
+  } finally {
+    // Clean up global
+    delete global.React;
+  }
+}
+
+// Recursively build a React element tree
+// treeSpec: { componentPath, props, children: [...], htmlChildren: string }
+async function buildReactTree(treeSpec, React) {
+  const { componentPath, props, children, htmlChildren } = treeSpec;
+
+  // Verify the component file exists
+  if (!fs.existsSync(componentPath)) {
+    throw new Error(`Component file not found: ${componentPath}`);
+  }
+
+  console.log(`[ReactiveViews SSR] Building tree for ${componentPath}`);
+
+  // Bundle and load the component
+  const Component = await loadComponent(componentPath);
+
+  // Build child React elements in parallel (siblings render in parallel)
+  const childElements = children?.length
+    ? await Promise.all(children.map((child) => buildReactTree(child, React)))
+    : [];
+
+  // Combine React elements with HTML children
+  let allChildren = [...childElements];
+  
+  // If there's HTML content, add it as a dangerously set inner HTML element
+  // This preserves mixed content like <Component><div>foo</div><AnotherComponent /></Component>
+  if (htmlChildren && htmlChildren.trim()) {
+    // Parse HTML children and create elements
+    // For now, we'll use dangerouslySetInnerHTML for HTML content
+    allChildren.push(
+      React.createElement("div", {
+        dangerouslySetInnerHTML: { __html: htmlChildren },
+      })
+    );
+  }
+
+  // Create the React element with all children
+  return React.createElement(Component, props || {}, ...allChildren);
+}
+
+// Load and bundle a component, returning the Component function
+async function loadComponent(componentPath) {
+  const tempDir = join(PROJECT_ROOT, "tmp", "reactive_views_ssr");
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
+  }
+
+  const entryFile = join(
+    tempDir,
+    `entry_${Date.now()}_${Math.random().toString(36).slice(2)}.cjs`
+  );
+  const outFile = entryFile.replace(".cjs", ".out.cjs");
+
+  // Create entry file that imports React and the component
+  const entryContent = `
+const React = require('react');
+const Component = require('${componentPath.replace(
+    /\\/g,
+    "/"
+  )}').default || require('${componentPath.replace(/\\/g, "/")}');
+
+exports.default = Component;
+`;
+
+  fs.writeFileSync(entryFile, entryContent);
+
+  try {
+    // Bundle the component with esbuild
+    await esbuild.build({
+      entryPoints: [entryFile],
+      bundle: true,
+      format: "cjs",
+      platform: "node",
+      outfile: outFile,
+      external: [
+        "react",
+        "react-dom",
+        "react/jsx-runtime",
+        "react/jsx-dev-runtime",
+      ],
+      jsx: "transform",
+      jsxFactory: "React.createElement",
+      jsxFragment: "React.Fragment",
+      loader: {
+        ".tsx": "tsx",
+        ".ts": "ts",
+        ".jsx": "jsx",
+        ".js": "jsx",
+      },
+      logLevel: "warning",
+    });
+
+    // Clear cache and load the bundled component
+    delete projectRequire.cache[projectRequire.resolve(outFile)];
+    const Component = projectRequire(outFile).default;
+
+    // Cleanup
+    try {
+      fs.unlinkSync(entryFile);
+      fs.unlinkSync(outFile);
+    } catch (e) {
+      // Ignore cleanup errors
+    }
+
+    return Component;
+  } catch (error) {
+    // Cleanup on error
+    try {
+      fs.unlinkSync(entryFile);
+      if (fs.existsSync(outFile)) {
+        fs.unlinkSync(outFile);
+      }
+    } catch (e) {
+      // Ignore cleanup errors
+    }
+    throw error;
+  }
+}
+
 // HTTP server
 const server = http.createServer(async (req, res) => {
   // Enable CORS for development
@@ -146,6 +288,122 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ status: "ok", version: "1.0.0" }));
+    return;
+  }
+
+  // Batch render endpoint - renders multiple components in parallel
+  // Request: { components: [{ componentPath, props }, ...] }
+  // Response: { results: [{ html } | { error }, ...] }
+  //
+  // This endpoint significantly improves performance by:
+  // - Reducing HTTP overhead (N requests -> 1 request)
+  // - Enabling parallel component rendering with Promise.all
+  // - Maintaining order of results to match input order
+  if (req.method === "POST" && req.url === "/batch-render") {
+    let body = "";
+
+    req.on("data", (chunk) => {
+      body += chunk.toString();
+    });
+
+    req.on("end", async () => {
+      try {
+        const { components } = JSON.parse(body);
+
+        if (!Array.isArray(components)) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Expected components array" }));
+          return;
+        }
+
+        // Render all components in parallel using Promise.all
+        // Individual component failures don't fail the entire batch
+        const results = await Promise.all(
+          components.map(async ({ componentPath, props }) => {
+            try {
+              if (!componentPath) {
+                return { error: "Missing componentPath" };
+              }
+
+              const html = await renderComponent(componentPath, props || {});
+              return { html };
+            } catch (error) {
+              console.error(
+                `[ReactiveViews SSR] Error rendering ${componentPath}:`,
+                error
+              );
+              return {
+                error: error.message,
+                props:
+                  process.env.NODE_ENV === "development" ? props : undefined,
+              };
+            }
+          })
+        );
+
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ results }));
+      } catch (error) {
+        console.error("[ReactiveViews SSR] Batch render error:", error);
+
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error: error.message,
+            stack:
+              process.env.NODE_ENV === "development" ? error.stack : undefined,
+          })
+        );
+      }
+    });
+
+    return;
+  }
+
+  // Tree render endpoint - renders a component tree with true React composition
+  // Request: { componentPath, props, children: [...], htmlChildren: string }
+  // Response: { html } | { error }
+  //
+  // This endpoint enables true React composition by:
+  // - Building a complete React element tree
+  // - Importing all components in parallel (siblings)
+  // - Rendering as a single React tree (children prop works naturally)
+  if (req.method === "POST" && req.url === "/render-tree") {
+    let body = "";
+
+    req.on("data", (chunk) => {
+      body += chunk.toString();
+    });
+
+    req.on("end", async () => {
+      try {
+        const treeSpec = JSON.parse(body);
+
+        if (!treeSpec.componentPath) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Missing componentPath" }));
+          return;
+        }
+
+        // Build React element tree recursively
+        const html = await renderComponentTree(treeSpec);
+
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ html }));
+      } catch (error) {
+        console.error("[ReactiveViews SSR] Tree render error:", error);
+
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error: error.message,
+            stack:
+              process.env.NODE_ENV === "development" ? error.stack : undefined,
+          })
+        );
+      }
+    });
+
     return;
   }
 
@@ -174,10 +432,21 @@ const server = http.createServer(async (req, res) => {
       } catch (error) {
         console.error("[ReactiveViews SSR] Render error:", error);
 
+        // Parse request to get props for error reporting
+        let errorProps = {};
+        try {
+          const { props } = JSON.parse(body);
+          errorProps = props;
+        } catch (e) {
+          // Ignore parse errors in error handler
+        }
+
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
             error: error.message,
+            props:
+              process.env.NODE_ENV === "development" ? errorProps : undefined,
             stack:
               process.env.NODE_ENV === "development" ? error.stack : undefined,
           })

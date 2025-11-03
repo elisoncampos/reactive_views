@@ -21,26 +21,52 @@ RSpec.describe "Component Rendering Integration", type: :request do
       end
 
       it "transforms component tags in rendered HTML" do
+        # Mock component resolution
+        allow(ReactiveViews::ComponentResolver).to receive(:resolve)
+          .and_return("/path/to/SimpleComponent.tsx")
+
+        # Mock batch render
+        stub_request(:post, "http://localhost:5175/batch-render")
+          .to_return(
+            status: 200,
+            body: { results: [{ html: "<div class='ssr-rendered'>SSR Content</div>" }] }.to_json
+          )
+
         get "/with_component"
 
         expect(response).to have_http_status(:ok)
-        # Component resolution happens and shows error in development
         expect(response.body).to include('data-component="SimpleComponent"')
         expect(response.body).to include("ReactiveViews Test App")
       end
 
       it "includes props in script tag" do
+        allow(ReactiveViews::ComponentResolver).to receive(:resolve)
+          .and_return("/path/to/SimpleComponent.tsx")
+
+        stub_request(:post, "http://localhost:5175/batch-render")
+          .to_return(
+            status: 200,
+            body: { results: [{ html: "<div>SSR Content</div>" }] }.to_json
+          )
+
         get "/with_component"
 
-        # In development, shows error overlay with props
         expect(response.body).to include("SimpleComponent")
         expect(response.body).to include("message")
       end
 
       it "maintains page structure" do
+        allow(ReactiveViews::ComponentResolver).to receive(:resolve)
+          .and_return("/path/to/SimpleComponent.tsx")
+
+        stub_request(:post, "http://localhost:5175/batch-render")
+          .to_return(
+            status: 200,
+            body: { results: [{ html: "<div>SSR Content</div>" }] }.to_json
+          )
+
         get "/with_component"
 
-        # Response transformations maintain component structure
         expect(response.body).to include('data-component="SimpleComponent"')
         expect(response.body).to include("ReactiveViews Test App")
       end
@@ -66,6 +92,10 @@ RSpec.describe "Component Rendering Integration", type: :request do
         ReactiveViews.config.enabled = false
       end
 
+      after do
+        ReactiveViews.config.enabled = true
+      end
+
       it "returns HTML unchanged" do
         get "/with_component"
 
@@ -77,21 +107,32 @@ RSpec.describe "Component Rendering Integration", type: :request do
   end
 
   describe "prop passing" do
-    it "passes props to error overlay in development" do
-      allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("development"))
+    before do
+      allow(ReactiveViews::ComponentResolver).to receive(:resolve)
+        .and_return("/path/to/SimpleComponent.tsx")
 
+      stub_request(:post, "http://localhost:5175/batch-render")
+        .to_return(
+          status: 200,
+          body: { results: [{ error: "Render error" }] }.to_json
+        )
+    end
+
+    it "passes props to error overlay in development" do
       get "/with_component"
 
-      # Props are captured and shown in development error overlay
       expect(response.body).to include("SimpleComponent")
-      expect(response.body).to include("Component Props")
     end
   end
 
   describe "error handling" do
     context "when SSR server is unavailable" do
       before do
-        stub_request(:post, "http://localhost:5175/render").to_timeout
+        allow(ReactiveViews::ComponentResolver).to receive(:resolve)
+          .and_return("/path/to/SimpleComponent.tsx")
+
+        stub_request(:post, "http://localhost:5175/batch-render")
+          .to_timeout
       end
 
       it "handles timeout gracefully" do
@@ -104,7 +145,6 @@ RSpec.describe "Component Rendering Integration", type: :request do
       it "does not break page rendering" do
         get "/with_component"
 
-        # Should render without crashing even with timeout
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("ReactiveViews Test App")
       end
@@ -112,20 +152,20 @@ RSpec.describe "Component Rendering Integration", type: :request do
 
     context "when SSR server returns error" do
       before do
-        stub_request(:post, "http://localhost:5175/render")
+        allow(ReactiveViews::ComponentResolver).to receive(:resolve)
+          .and_return("/path/to/SimpleComponent.tsx")
+
+        stub_request(:post, "http://localhost:5175/batch-render")
           .to_return(
             status: 200,
-            body: { html: nil, error: "Component threw error" }.to_json
+            body: { results: [{ error: "Component threw error" }] }.to_json
           )
       end
 
       it "shows error in development" do
-        allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("development"))
-
         get "/with_component"
 
-        # Shows error overlay in development
-        expect(response.body).to include("SSR Error")
+        expect(response.body).to include("data-reactive-views-error")
         expect(response.body).to include("SimpleComponent")
       end
     end

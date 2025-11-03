@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
-require "nokogiri"
-require "securerandom"
-require "json"
+require 'nokogiri'
+require 'securerandom'
+require 'json'
 
 module ReactiveViews
   class TagTransformer
@@ -17,19 +17,39 @@ module ReactiveViews
 
       return html if component_name_map.empty?
 
-      doc = Nokogiri::HTML5.fragment(html)
+      # Convert self-closing tags to explicitly closed tags for HTML5 parser
+      # This prevents HTML5 from treating <Component /> as an opening tag
+      processed_html = html.gsub(%r{<([A-Z][a-zA-Z0-9]*)\s*([^>]*?)/\s*>}, '<\1 \2></\1>')
 
-      # Find all custom component tags (PascalCase elements)
-      component_nodes = find_component_nodes(doc)
+      doc = Nokogiri::HTML5.fragment(processed_html)
 
-      return html if component_nodes.empty?
+      # Build component tree to detect nesting
+      tree_result = build_component_tree(doc, component_name_map)
 
-      # Transform each component tag
-      component_nodes.each do |node|
-        transform_component_node(node, component_name_map)
+      return html if tree_result[:nodes].empty?
+
+      # Initialize script collection context
+      context = { scripts: [] }
+
+      # Adaptive rendering strategy: choose between tree and batch rendering
+      if tree_result[:has_nesting] && ReactiveViews.config.tree_rendering_enabled
+        # Use tree rendering for nested components
+        tree_transform_components(tree_result[:nodes], component_name_map, context)
+      elsif ReactiveViews.config.batch_rendering_enabled
+        # Use batch rendering for flat layouts
+        component_nodes = find_component_nodes(doc)
+        batch_transform_components(component_nodes, component_name_map, context)
+      else
+        # Fall back to individual rendering
+        component_nodes = find_component_nodes(doc)
+        component_nodes.each do |node|
+          transform_component_node(node, component_name_map, context)
+        end
       end
 
-      doc.to_html
+      # Convert back to HTML and inject collected scripts
+      html_output = doc.to_html
+      inject_scripts(html_output, context[:scripts])
     rescue StandardError => e
       # Log error but return original HTML to avoid breaking the page
       if defined?(Rails) && Rails.logger
@@ -39,15 +59,166 @@ module ReactiveViews
       html
     end
 
+    private_class_method def self.inject_scripts(html, scripts)
+      return html if scripts.empty?
+
+      scripts_html = scripts.join("\n")
+
+      # Try to inject before </body>
+      if html.include?('</body>')
+        html.sub('</body>', "#{scripts_html}\n</body>")
+      else
+        # No body tag, append at end
+        html + "\n" + scripts_html
+      end
+    end
+
     private_class_method def self.extract_component_names(html)
       # Find all React component tags (PascalCase) before Nokogiri lowercases them
       # Matches: <ComponentName ...> or <ComponentName/>
       component_map = {}
-      html.scan(/<([A-Z][a-zA-Z0-9]*)[\s\/>]/) do |match|
+      html.scan(%r{<([A-Z][a-zA-Z0-9]*)[\s/>]}) do |match|
         component_name = match[0]
         component_map[component_name.downcase] = component_name
       end
       component_map
+    end
+
+    # Transform components using tree rendering (for nested components)
+    # This method sends the entire component tree to the SSR server
+    # which renders it as a single React tree, enabling true composition
+    private_class_method def self.tree_transform_components(tree_nodes, component_name_map, context)
+      # Check nesting depth and warn if too deep
+      max_depth = calculate_tree_depth(tree_nodes)
+      if (max_depth > ReactiveViews.config.max_nesting_depth_warning) && defined?(Rails) && Rails.logger
+        Rails.logger.warn(
+          "[ReactiveViews] Component nesting depth (#{max_depth}) exceeds recommended maximum " \
+          "(#{ReactiveViews.config.max_nesting_depth_warning}). Consider flattening the component tree for better performance."
+        )
+      end
+
+      # Render each root tree node
+      tree_nodes.each do |tree_node|
+        render_tree_node(tree_node, context)
+      end
+    end
+
+    # Calculate the maximum depth of a component tree
+    private_class_method def self.calculate_tree_depth(tree_nodes)
+      return 0 if tree_nodes.empty?
+
+      tree_nodes.map { |node| calculate_node_depth(node) }.max
+    end
+
+    # Calculate depth of a single tree node
+    private_class_method def self.calculate_node_depth(tree_node)
+      return 1 if tree_node[:children].empty?
+
+      1 + calculate_tree_depth(tree_node[:children])
+    end
+
+    # Render a single tree node (recursively)
+    private_class_method def self.render_tree_node(tree_node, context)
+      uuid = SecureRandom.uuid
+
+      # Build tree spec for SSR server
+      tree_spec = build_tree_spec(tree_node)
+
+      # Render via tree endpoint
+      result = ReactiveViews::Renderer.tree_render(tree_spec)
+
+      # Handle result
+      if result[:error]
+        handle_ssr_error(
+          tree_node[:node],
+          tree_node[:component_name],
+          tree_node[:props],
+          "___REACTIVE_VIEWS_ERROR___#{result[:error]}___"
+        )
+      elsif result[:html]
+        create_island(
+          tree_node[:node],
+          tree_node[:component_name],
+          uuid,
+          tree_node[:props],
+          result[:html],
+          context
+        )
+      end
+    end
+
+    # Build a spec for the SSR server to render a component tree
+    private_class_method def self.build_tree_spec(tree_node)
+      {
+        component_name: tree_node[:component_name],
+        props: tree_node[:props],
+        children: tree_node[:children].map { |child| build_tree_spec(child) },
+        html_children: tree_node[:html_children].map(&:to_html).join
+      }
+    end
+
+    # Batch transform all component nodes in one SSR request
+    #
+    # This method uses a two-phase approach:
+    # 1. Collect all component specs and generate UUIDs
+    # 2. Batch render via single HTTP request
+    # 3. Apply results to nodes in order
+    #
+    # Performance: N components = 1 HTTP request (vs N requests individually)
+    private_class_method def self.batch_transform_components(component_nodes, component_name_map, context)
+      # Phase 1: Collect component specs and store original node positions
+      component_specs = []
+      node_data = []
+
+      # Convert NodeSet to array to avoid live collection issues
+      nodes_array = component_nodes.to_a
+
+      nodes_array.each do |node|
+        component_name = component_name_map[node.name.downcase] || to_pascal_case(node.name)
+        uuid = SecureRandom.uuid
+        props = extract_props(node)
+
+        component_specs << {
+          uuid: uuid,
+          component_name: component_name,
+          props: props
+        }
+
+        # Store node data
+        node_data << {
+          node: node,
+          component_name: component_name,
+          uuid: uuid,
+          props: props
+        }
+      end
+
+      # Phase 2: Batch render all components in one request
+      results = ReactiveViews::Renderer.batch_render(component_specs)
+
+      # Phase 3: Apply results to ALL nodes
+      # Process in normal order since we have a static array
+      results.each_with_index do |result, index|
+        data = node_data[index]
+
+        if result[:error]
+          handle_ssr_error(
+            data[:node],
+            data[:component_name],
+            data[:props],
+            "___REACTIVE_VIEWS_ERROR___#{result[:error]}___"
+          )
+        elsif result[:html]
+          create_island(
+            data[:node],
+            data[:component_name],
+            data[:uuid],
+            data[:props],
+            result[:html],
+            context
+          )
+        end
+      end
     end
 
     private_class_method def self.find_component_nodes(doc)
@@ -68,17 +239,82 @@ module ReactiveViews
         td template textarea tfoot th thead time title tr track u ul var video wbr
       ]
 
-      doc.css("*").select do |node|
+      doc.css('*').select do |node|
         # Skip if it's a standard HTML tag or our internal marker
         next false if standard_html_tags.include?(node.name.downcase)
-        next false if node.name.downcase.start_with?("reactive_views_")
+        next false if node.name.downcase.start_with?('reactive_views_')
 
         # It's a custom element - likely a React component
         true
       end
     end
 
-    private_class_method def self.transform_component_node(node, component_name_map)
+    # Build a tree structure representing nested components
+    # Returns: { nodes: [tree_node, ...], has_nesting: bool }
+    # tree_node: { node:, component_name:, props:, children: [...], html_children: [...] }
+    private_class_method def self.build_component_tree(doc, component_name_map)
+      all_component_nodes = find_component_nodes(doc)
+      return { nodes: [], has_nesting: false } if all_component_nodes.empty?
+
+      # Find root components (not nested inside other components)
+      component_node_set = Set.new(all_component_nodes)
+      root_nodes = []
+      has_nesting = false
+
+      all_component_nodes.each do |node|
+        is_root = true
+        parent = node.parent
+
+        # Walk up the tree to see if this node is inside another component
+        while parent && parent != doc
+          if component_node_set.include?(parent)
+            is_root = false
+            has_nesting = true
+            break
+          end
+          parent = parent.parent
+        end
+
+        root_nodes << node if is_root
+      end
+
+      # Build tree for each root node
+      tree_nodes = root_nodes.map do |root|
+        build_tree_node(root, component_name_map, component_node_set)
+      end
+
+      { nodes: tree_nodes, has_nesting: has_nesting }
+    end
+
+    # Recursively build a tree node for a component
+    private_class_method def self.build_tree_node(node, component_name_map, component_node_set)
+      component_name = component_name_map[node.name.downcase] || to_pascal_case(node.name)
+      props = extract_props(node)
+
+      # Find child components and separate them from HTML children
+      component_children = []
+      html_children = []
+
+      node.children.each do |child|
+        if component_node_set.include?(child)
+          # It's a component - recursively build its tree
+          component_children << build_tree_node(child, component_name_map, component_node_set)
+        else
+          # It's HTML content - preserve it
+          html_children << child unless child.text? && child.content.strip.empty?
+        end
+      end
+
+      {
+        node: node,
+        component_name: component_name,
+        props: props,
+        children: component_children,
+        html_children: html_children
+      }
+    end
+
+    private_class_method def self.transform_component_node(node, component_name_map, context)
       # Get the original PascalCase name from our map
       component_name = component_name_map[node.name.downcase] || to_pascal_case(node.name)
       uuid = SecureRandom.uuid
@@ -90,13 +326,13 @@ module ReactiveViews
       ssr_html = ReactiveViews::Renderer.render(component_name, props)
 
       # Check for error marker
-      if ssr_html.start_with?("___REACTIVE_VIEWS_ERROR___")
+      if ssr_html.start_with?('___REACTIVE_VIEWS_ERROR___')
         handle_ssr_error(node, component_name, props, ssr_html)
         return
       end
 
       # Create the island container
-      create_island(node, component_name, uuid, props, ssr_html)
+      create_island(node, component_name, uuid, props, ssr_html, context)
     end
 
     private_class_method def self.extract_props(node)
@@ -106,7 +342,7 @@ module ReactiveViews
         value = attr.value
 
         # Try to parse as JSON if it looks like JSON
-        if value.start_with?("{", "[") || value == "true" || value == "false" || value =~ /^\d+$/
+        if value.start_with?('{', '[') || value == 'true' || value == 'false' || value =~ /^\d+$/
           begin
             props[name] = JSON.parse(value)
           rescue JSON::ParserError
@@ -120,29 +356,38 @@ module ReactiveViews
       props
     end
 
-    private_class_method def self.create_island(node, component_name, uuid, props, ssr_html)
+    private_class_method def self.create_island(node, component_name, uuid, props, ssr_html, context = nil)
       # Create container div
-      container = Nokogiri::XML::Node.new("div", node.document)
-      container["data-island-uuid"] = uuid
-      container["data-component"] = component_name
+      container = Nokogiri::XML::Node.new('div', node.document)
+      container['data-island-uuid'] = uuid
+      container['data-component'] = component_name
 
       # Add SSR'd HTML as inner content
       container.inner_html = ssr_html
 
-      # Create props script tag
-      script = Nokogiri::XML::Node.new("script", node.document)
-      script["type"] = "application/json"
-      script["data-island-uuid"] = uuid
-      script.content = props.to_json
+      # Only create props script tag if there are actual props
+      if props && !props.empty?
+        script = Nokogiri::XML::Node.new('script', node.document)
+        script['type'] = 'application/json'
+        script['data-island-uuid'] = uuid
+        script.content = props.to_json
+
+        # Collect script for later injection if context is provided
+        if context
+          context[:scripts] << script.to_html
+        else
+          # Fallback: add inline (for backward compatibility)
+          node.add_next_sibling(script)
+        end
+      end
 
       # Replace the original node
-      node.add_next_sibling(script)
       node.replace(container)
     end
 
     private_class_method def self.handle_ssr_error(node, component_name, props, error_html)
       # Extract error from marker
-      error_message = error_html.sub("___REACTIVE_VIEWS_ERROR___", "").sub("___", "")
+      error_message = error_html.sub('___REACTIVE_VIEWS_ERROR___', '').sub('___', '')
 
       if defined?(Rails) && Rails.env.development?
         # Show error overlay in development
@@ -152,15 +397,15 @@ module ReactiveViews
           error: error_message
         )
 
-        error_div = Nokogiri::XML::Node.new("div", node.document)
+        error_div = Nokogiri::XML::Node.new('div', node.document)
         error_div.inner_html = error_content
         node.replace(error_div)
       else
         # In production, render empty div with minimal error info
-        fallback = Nokogiri::XML::Node.new("div", node.document)
-        fallback["data-reactive-views-error"] = "true"
-        fallback["data-component"] = component_name
-        fallback["style"] = "display: none;"
+        fallback = Nokogiri::XML::Node.new('div', node.document)
+        fallback['data-reactive-views-error'] = 'true'
+        fallback['data-component'] = component_name
+        fallback['style'] = 'display: none;'
         fallback.content = "<!-- Component #{component_name} failed to render -->"
         node.replace(fallback)
       end

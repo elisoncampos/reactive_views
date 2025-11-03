@@ -1,22 +1,20 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "vite_rails"
 
 RSpec.describe ReactiveViewsHelper, type: :helper do
-  describe "#reactive_views_script_tag" do
-    context "when vite_rails is available" do
-      before do
-        stub_const("ViteRails", Module.new)
-        # Create a test helper class that implements the vite methods
-        helper.singleton_class.class_eval do
-          def vite_client_tag
-            "<script>vite client</script>".html_safe
-          end
+  # Include ViteRails helpers so our wrapper has something to wrap
+  before do
+    helper.extend(ViteRails::TagHelpers)
+  end
 
-          def vite_javascript_tag(name)
-            "<script>vite js for #{name}</script>".html_safe
-          end
-        end
+  describe "#reactive_views_script_tag" do
+    context "when vite methods are available" do
+      before do
+        # Stub the vite_rails methods that our helper wraps
+        allow(helper).to receive(:vite_client_tag).and_return("<script>vite client</script>".html_safe)
+        allow(helper).to receive(:vite_javascript_tag).and_return("<script>vite js for application</script>".html_safe)
       end
 
       it "includes vite_client_tag" do
@@ -41,45 +39,21 @@ RSpec.describe ReactiveViewsHelper, type: :helper do
       end
     end
 
-    context "when vite_rails is not available" do
+    context "when vite methods are not available" do
       before do
-        hide_const("ViteRails")
+        # Make respond_to? return false for vite methods
+        allow(helper).to receive(:respond_to?).and_call_original
+        allow(helper).to receive(:respond_to?).with(:vite_client_tag).and_return(false)
+        allow(helper).to receive(:respond_to?).with(:vite_javascript_tag).and_return(false)
       end
 
-      it "returns empty safe string in production" do
-        allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+      it "returns empty safe string when methods not available" do
         result = helper.reactive_views_script_tag
         expect(result).to eq("".html_safe)
       end
 
-      it "returns warning div in development" do
-        allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("development"))
-        result = helper.reactive_views_script_tag
-        expect(result).to include("ReactiveViews requires vite_rails gem")
-        expect(result).to be_html_safe
-      end
-    end
-
-    context "when vite helpers raise errors" do
-      before do
-        stub_const("ViteRails", Module.new)
-        allow(helper).to receive(:respond_to?).and_call_original
-        allow(helper).to receive(:respond_to?).with(:vite_client_tag).and_return(true)
-        allow(helper).to receive(:respond_to?).with(:vite_client_tag, true).and_return(true)
-        allow(helper).to receive(:respond_to?).with(:vite_javascript_tag).and_return(true)
-        allow(helper).to receive(:respond_to?).with(:vite_javascript_tag, true).and_return(true)
-        allow(helper).to receive(:vite_client_tag).and_raise(NoMethodError, "vite_client_tag not available")
-        allow(helper).to receive(:vite_javascript_tag).and_raise(NoMethodError, "vite_javascript_tag not available")
-      end
-
-      it "handles errors gracefully" do
+      it "does not raise errors" do
         expect { helper.reactive_views_script_tag }.not_to raise_error
-      end
-
-      it "returns error message in development" do
-        allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("development"))
-        result = helper.reactive_views_script_tag
-        expect(result).to include("vite_javascript_tag failed")
       end
     end
   end

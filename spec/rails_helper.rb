@@ -1,15 +1,15 @@
 # frozen_string_literal: true
 
 # This file is copied to spec/ when you run 'rails generate rspec:install'
-require "spec_helper"
-ENV["RAILS_ENV"] ||= "test"
+require 'spec_helper'
+ENV['RAILS_ENV'] ||= 'test'
 
 # Require Combustion for lightweight Rails testing
-require "combustion"
-Combustion.path = "spec/dummy"
+require 'combustion'
+Combustion.path = 'spec/internal'
 
 # Require the gem code BEFORE combustion initializes so railties load
-require_relative "../lib/reactive_views"
+require_relative '../lib/reactive_views'
 
 # Initialize Combustion only once
 unless defined?(COMBUSTION_INITIALIZED)
@@ -23,7 +23,7 @@ unless defined?(COMBUSTION_INITIALIZED)
   COMBUSTION_INITIALIZED = true
 end
 
-require "rspec/rails"
+require 'rspec/rails'
 # Add additional requires below this line. Rails is not loaded until this point!
 
 # Requires supporting ruby files with custom matchers and macros, etc, in
@@ -39,7 +39,7 @@ require "rspec/rails"
 # directory. Alternatively, in the individual `*_spec.rb` files, manually
 # require only the support files necessary.
 #
-Dir[File.join(__dir__, "support", "**", "*.rb")].sort.each { |f| require f }
+Dir[File.join(__dir__, 'support', '**', '*.rb')].sort.each { |f| require f }
 
 RSpec.configure do |config|
   # Remove this line to enable support for ActiveRecord

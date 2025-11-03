@@ -3,7 +3,7 @@
 module ReactiveViews
   class ErrorOverlay
     def self.generate(component_name:, props:, error:)
-      error_class, error_message = error.split(":", 2)
+      error_class, error_message = error.split(':', 2)
       error_message ||= error
 
       <<~HTML
@@ -74,7 +74,7 @@ module ReactiveViews
     end
 
     private_class_method def self.props_section(props)
-      return "" if props.nil? || props.empty?
+      return '' if props.nil? || props.empty?
 
       props_json = JSON.pretty_generate(props)
 
@@ -108,7 +108,7 @@ module ReactiveViews
 
     private_class_method def self.suggestions_section(error_message)
       suggestions = generate_suggestions(error_message)
-      return "" if suggestions.empty?
+      return '' if suggestions.empty?
 
       suggestions_html = suggestions.map do |suggestion|
         <<~HTML
@@ -150,24 +150,24 @@ module ReactiveViews
     private_class_method def self.generate_suggestions(error_message)
       suggestions = []
 
-      if error_message.include?("Could not connect") || error_message.include?("ECONNREFUSED")
+      if error_message.include?('Could not connect') || error_message.include?('ECONNREFUSED')
         suggestions << "Make sure the SSR server is running on #{ReactiveViews.config.ssr_url}"
         suggestions << "Check that 'bin/dev' or 'bundle exec rake reactive_views:ssr' is running"
-        suggestions << "Verify the RV_SSR_PORT environment variable is set correctly"
-      elsif error_message.include?("Component not found")
-        suggestions << "Verify the component file exists in app/views/components/ or app/javascript/components/"
-        suggestions << "Check that the component filename matches the PascalCase name (e.g., ExampleHello → example_hello.tsx)"
-        suggestions << "Ensure the component has a default export"
-      elsif error_message.include?("timed out")
-        suggestions << "The SSR server might be overloaded or the component is taking too long to render"
-        suggestions << "Check for infinite loops or slow computations in the component"
-        suggestions << "Try increasing the timeout in config/initializers/reactive_views.rb"
-      elsif error_message.include?("Invalid JSON")
-        suggestions << "Check that the component props are valid JSON"
-        suggestions << "Ensure special characters in props are properly escaped"
+        suggestions << 'Verify the RV_SSR_PORT environment variable is set correctly'
+      elsif error_message.include?('Component not found')
+        suggestions << 'Verify the component file exists in app/views/components/ or app/javascript/components/'
+        suggestions << 'Check that the component filename matches the PascalCase name (e.g., ExampleHello → example_hello.tsx)'
+        suggestions << 'Ensure the component has a default export'
+      elsif error_message.include?('timed out')
+        suggestions << 'The SSR server might be overloaded or the component is taking too long to render'
+        suggestions << 'Check for infinite loops or slow computations in the component'
+        suggestions << 'Try increasing the timeout in config/initializers/reactive_views.rb'
+      elsif error_message.include?('Invalid JSON')
+        suggestions << 'Check that the component props are valid JSON'
+        suggestions << 'Ensure special characters in props are properly escaped'
       else
-        suggestions << "Check the SSR server logs for more details"
-        suggestions << "Verify the component renders correctly in isolation"
+        suggestions << 'Check the SSR server logs for more details'
+        suggestions << 'Verify the component renders correctly in isolation'
         suggestions << "Review the component's props and ensure they match the expected types"
       end
 
@@ -176,11 +176,11 @@ module ReactiveViews
 
     private_class_method def self.escape_html(text)
       text.to_s
-          .gsub("&", "&amp;")
-          .gsub("<", "&lt;")
-          .gsub(">", "&gt;")
-          .gsub('"', "&quot;")
-          .gsub("'", "&#39;")
+          .gsub('&', '&amp;')
+          .gsub('<', '&lt;')
+          .gsub('>', '&gt;')
+          .gsub('"', '&quot;')
+          .gsub("'", '&#39;')
     end
   end
 end

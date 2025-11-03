@@ -6,6 +6,10 @@ Reactive, incremental React for Rails — SSR + hydration islands with optional 
 - Server-render via a Node SSR server, hydrate on the client automatically.
 - Optional Vite integration via `vite_rails` for client bundles.
 
+## Disclaimer
+
+This is a work in progress. It is not ready for production use.
+
 ## Installation
 
 ### Quick Start
@@ -191,14 +195,17 @@ ReactiveViews supports multiple file naming conventions to accommodate both Rail
 #### Supported Naming Patterns
 
 1. **PascalCase** (React/TypeScript standard)
+
    - `PostList.tsx`
    - `UserProfileCard.tsx`
 
 2. **snake_case** (Rails standard)
+
    - `post_list.tsx`
    - `user_profile_card.tsx`
 
 3. **camelCase** (JavaScript standard)
+
    - `postList.tsx`
    - `userProfileCard.tsx`
 
@@ -207,6 +214,7 @@ ReactiveViews supports multiple file naming conventions to accommodate both Rail
    - `user-profile-card.tsx`
 
 All naming conventions work recursively in nested directories:
+
 - `components/PostList.tsx`
 - `components/auth/login_form.tsx`
 - `components/users/profile/user-avatar.tsx`
@@ -225,6 +233,7 @@ Each naming variant is tried with all supported extensions (`.tsx`, `.jsx`, `.ts
 #### Best Practices
 
 **Recommended:** Use **snake_case** for Rails projects:
+
 ```
 app/views/components/
   ├── post_list.tsx

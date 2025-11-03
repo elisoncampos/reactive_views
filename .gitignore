@@ -6,6 +6,7 @@
 /pkg/
 /spec/reports/
 /spec/dummy/
+/spec/internal/
 /tmp/
 *.gem
 .DS_Store
