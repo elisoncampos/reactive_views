@@ -1,0 +1,14 @@
+<%# This page demonstrates hydration with interactive components %>
+
+<div className="card">
+  <h1><%= @page_title %></h1>
+  <p>This page uses island components with hydration for interactivity.</p>
+  <InteractiveCounter initialCount={<%= @initial_count %>} />
+  <div style={{ marginTop: '20px' }}>
+    <a href="/" style={{ color: '#007bff', textDecoration: 'none' }}>
+      ← Back to Home
+    </a>
+  </div>
+</div>
+
+

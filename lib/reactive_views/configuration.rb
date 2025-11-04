@@ -2,7 +2,7 @@
 
 module ReactiveViews
   class Configuration
-    attr_accessor :enabled, :ssr_url, :component_views_paths, :component_js_paths, :ssr_cache_ttl_seconds, :boot_module_path, :ssr_timeout, :batch_rendering_enabled, :batch_timeout, :tree_rendering_enabled, :max_nesting_depth_warning
+    attr_accessor :enabled, :ssr_url, :component_views_paths, :component_js_paths, :ssr_cache_ttl_seconds, :boot_module_path, :ssr_timeout, :batch_rendering_enabled, :batch_timeout, :tree_rendering_enabled, :max_nesting_depth_warning, :props_inference_enabled, :props_inference_cache_ttl_seconds, :full_page_enabled
 
     # Alias for easier testing
     alias_method :component_paths, :component_views_paths
@@ -20,6 +20,9 @@ module ReactiveViews
       @batch_timeout = 10
       @tree_rendering_enabled = true
       @max_nesting_depth_warning = 3
+      @props_inference_enabled = true
+      @props_inference_cache_ttl_seconds = 300
+      @full_page_enabled = true
     end
   end
 end

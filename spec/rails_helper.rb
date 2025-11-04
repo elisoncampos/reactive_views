@@ -19,6 +19,9 @@ unless defined?(COMBUSTION_INITIALIZED)
     config.active_support.test_order = :random
     config.action_controller.perform_caching = false
     config.action_controller.allow_forgery_protection = false
+    # Allow rescue_from to work in tests
+    config.action_dispatch.show_exceptions = :rescuable
+    config.consider_all_requests_local = false
   end
   COMBUSTION_INITIALIZED = true
 end

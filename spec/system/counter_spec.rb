@@ -3,9 +3,9 @@
 require 'rails_helper'
 
 RSpec.describe "Counter Component with useState", type: :system, js: true do
-  VITE_PORT = 5174
-  SSR_PORT = 5175
-  SPEC_INTERNAL_DIR = File.expand_path("../internal", __dir__)
+  VITE_PORT = 5174 unless defined?(VITE_PORT)
+  SSR_PORT = 5175 unless defined?(SSR_PORT)
+  SPEC_INTERNAL_DIR = File.expand_path("../internal", __dir__) unless defined?(SPEC_INTERNAL_DIR)
 
   before(:all) do
     # Kill any processes using our ports to avoid conflicts

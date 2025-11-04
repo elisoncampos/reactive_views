@@ -7,6 +7,7 @@ require_relative "reactive_views/renderer"
 require_relative "reactive_views/error_overlay"
 require_relative "reactive_views/tag_transformer"
 require_relative "reactive_views/helpers"
+require_relative "reactive_views/props_inference"
 
 if defined?(Rails)
   require_relative "reactive_views/railtie"

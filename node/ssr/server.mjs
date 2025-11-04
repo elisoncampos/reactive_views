@@ -26,6 +26,138 @@ console.log(`[ReactiveViews SSR] Starting server...`);
 console.log(`[ReactiveViews SSR] Project root: ${PROJECT_ROOT}`);
 console.log(`[ReactiveViews SSR] Port: ${PORT}`);
 
+// Props inference cache (keyed by content hash)
+const propsInferenceCache = new Map();
+
+// Lazy-load TypeScript compiler for props inference
+let ts = null;
+async function getTypeScript() {
+  if (!ts) {
+    ts = await import(projectRequire.resolve("typescript"));
+  }
+  return ts;
+}
+
+/**
+ * Infer prop keys from TSX component signature
+ * Supports: export default function Component({ a, b }: Props) {}
+ * Supports: const Component = ({ a, b }: Props) => {}; export default Component
+ */
+function inferPropsFromTSX(tsxContent, contentHash) {
+  // Check cache first
+  if (propsInferenceCache.has(contentHash)) {
+    console.log(`[ReactiveViews SSR] Props inference cache hit for ${contentHash}`);
+    return propsInferenceCache.get(contentHash);
+  }
+
+  try {
+    // Use synchronous import for typescript
+    const typescript = projectRequire("typescript");
+    
+    // Parse TSX source
+    const sourceFile = typescript.createSourceFile(
+      "component.tsx",
+      tsxContent,
+      typescript.ScriptTarget.Latest,
+      true,
+      typescript.ScriptKind.TSX
+    );
+
+    const keys = [];
+
+    // Find default export and extract prop destructuring
+    function visit(node) {
+      // Case 1: export default function Component({ a, b }: Props) {}
+      if (
+        typescript.isFunctionDeclaration(node) &&
+        node.modifiers?.some(
+          (m) => m.kind === typescript.SyntaxKind.ExportKeyword ||
+                 m.kind === typescript.SyntaxKind.DefaultKeyword
+        )
+      ) {
+        extractPropsFromFunction(node);
+      }
+
+      // Case 2: export default Component (find Component declaration)
+      if (
+        typescript.isExportAssignment(node) &&
+        typescript.isIdentifier(node.expression)
+      ) {
+        const componentName = node.expression.text;
+        // Find the variable/function declaration
+        typescript.forEachChild(sourceFile, (child) => {
+          if (
+            typescript.isVariableStatement(child) &&
+            child.declarationList.declarations.some(
+              (d) => typescript.isIdentifier(d.name) && d.name.text === componentName
+            )
+          ) {
+            child.declarationList.declarations.forEach((decl) => {
+              if (
+                typescript.isIdentifier(decl.name) &&
+                decl.name.text === componentName &&
+                decl.initializer
+              ) {
+                if (typescript.isArrowFunction(decl.initializer)) {
+                  extractPropsFromArrowFunction(decl.initializer);
+                } else if (typescript.isFunctionExpression(decl.initializer)) {
+                  extractPropsFromFunction(decl.initializer);
+                }
+              }
+            });
+          } else if (
+            typescript.isFunctionDeclaration(child) &&
+            typescript.isIdentifier(child.name) &&
+            child.name.text === componentName
+          ) {
+            extractPropsFromFunction(child);
+          }
+        });
+      }
+
+      typescript.forEachChild(node, visit);
+    }
+
+    function extractPropsFromFunction(node) {
+      if (node.parameters.length > 0) {
+        const firstParam = node.parameters[0];
+        if (typescript.isObjectBindingPattern(firstParam.name)) {
+          firstParam.name.elements.forEach((element) => {
+            if (typescript.isBindingElement(element) && typescript.isIdentifier(element.name)) {
+              keys.push(element.name.text);
+            }
+          });
+        }
+      }
+    }
+
+    function extractPropsFromArrowFunction(node) {
+      if (node.parameters.length > 0) {
+        const firstParam = node.parameters[0];
+        if (typescript.isObjectBindingPattern(firstParam.name)) {
+          firstParam.name.elements.forEach((element) => {
+            if (typescript.isBindingElement(element) && typescript.isIdentifier(element.name)) {
+              keys.push(element.name.text);
+            }
+          });
+        }
+      }
+    }
+
+    visit(sourceFile);
+
+    console.log(`[ReactiveViews SSR] Inferred props: ${keys.join(", ")}`);
+    
+    // Cache the result
+    propsInferenceCache.set(contentHash, keys);
+    
+    return keys;
+  } catch (error) {
+    console.error(`[ReactiveViews SSR] Props inference error:`, error);
+    return [];
+  }
+}
+
 // Render a component using React's server-side rendering
 async function renderComponent(componentPath, props) {
   // Verify the component file exists
@@ -288,6 +420,47 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ status: "ok", version: "1.0.0" }));
+    return;
+  }
+
+  // Props inference endpoint
+  // Request: { tsxContent, contentHash }
+  // Response: { keys: [...] }
+  if (req.method === "POST" && req.url === "/infer-props") {
+    let body = "";
+
+    req.on("data", (chunk) => {
+      body += chunk.toString();
+    });
+
+    req.on("end", async () => {
+      try {
+        const { tsxContent, contentHash } = JSON.parse(body);
+
+        if (!tsxContent) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Missing tsxContent" }));
+          return;
+        }
+
+        const keys = inferPropsFromTSX(tsxContent, contentHash);
+
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ keys }));
+      } catch (error) {
+        console.error("[ReactiveViews SSR] Props inference error:", error);
+
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error: error.message,
+            stack:
+              process.env.NODE_ENV === "development" ? error.stack : undefined,
+          })
+        );
+      }
+    });
+
     return;
   }
 

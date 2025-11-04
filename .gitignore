@@ -6,10 +6,18 @@
 /pkg/
 /spec/reports/
 /spec/dummy/
-/spec/internal/
+# Ignore build artifacts in spec/internal, but track essential test files
+/spec/internal/node_modules/
+/spec/internal/dist/
+/spec/internal/tmp/
+/spec/internal/log/*.log
+/spec/internal/Users/
+# Ignore vendor/bundle (bundler install path - 146MB of installed gems)
+/vendor/bundle/
 /tmp/
 *.gem
 .DS_Store
 node_modules/
 .env
 
+Users/elisoncampos/Development/Pessoal/reactive_views/spec/internal/log/test.log

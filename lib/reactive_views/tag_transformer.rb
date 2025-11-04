@@ -74,12 +74,22 @@ module ReactiveViews
     end
 
     private_class_method def self.extract_component_names(html)
-      # Find all React component tags (PascalCase) before Nokogiri lowercases them
+      # Find all React component tags (PascalCase) and their attributes before Nokogiri lowercases them
       # Matches: <ComponentName ...> or <ComponentName/>
       component_map = {}
-      html.scan(%r{<([A-Z][a-zA-Z0-9]*)[\s/>]}) do |match|
-        component_name = match[0]
-        component_map[component_name.downcase] = component_name
+      # Match component tags and capture everything until the closing >
+      html.scan(%r{<([A-Z][a-zA-Z0-9]*)(.*?)(?:/?>)}) do |component_name, attrs_str|
+        lowercase_name = component_name.downcase
+
+        # Store component name mapping
+        component_map[lowercase_name] ||= { name: component_name, attrs: {} }
+
+        # Extract attribute names (both camelCase and other styles)
+        # Match: attrName="value" or attrName='value' or attrName={value}
+        attrs_str.scan(/([a-zA-Z][a-zA-Z0-9]*)=/) do |attr_name|
+          attr_lowercase = attr_name[0].downcase
+          component_map[lowercase_name][:attrs][attr_lowercase] = attr_name[0]
+        end
       end
       component_map
     end
@@ -174,9 +184,20 @@ module ReactiveViews
       nodes_array = component_nodes.to_a
 
       nodes_array.each do |node|
-        component_name = component_name_map[node.name.downcase] || to_pascal_case(node.name)
+        lowercase_name = node.name.downcase
+        component_info = component_name_map[lowercase_name]
+
+        # Handle both old format (string) and new format (hash with :name and :attrs)
+        component_name = if component_info.is_a?(Hash) && component_info[:name]
+          component_info[:name]
+        elsif component_info.is_a?(String)
+          component_info
+        else
+          to_pascal_case(node.name)
+        end
+
         uuid = SecureRandom.uuid
-        props = extract_props(node)
+        props = extract_props(node, component_info.is_a?(Hash) ? component_info : nil)
 
         component_specs << {
           uuid: uuid,
@@ -288,8 +309,19 @@ module ReactiveViews
 
     # Recursively build a tree node for a component
     private_class_method def self.build_tree_node(node, component_name_map, component_node_set)
-      component_name = component_name_map[node.name.downcase] || to_pascal_case(node.name)
-      props = extract_props(node)
+      lowercase_name = node.name.downcase
+      component_info = component_name_map[lowercase_name]
+
+      # Handle both old format (string) and new format (hash with :name and :attrs)
+      component_name = if component_info.is_a?(Hash) && component_info[:name]
+        component_info[:name]
+      elsif component_info.is_a?(String)
+        component_info
+      else
+        to_pascal_case(node.name)
+      end
+
+      props = extract_props(node, component_info.is_a?(Hash) ? component_info : nil)
 
       # Find child components and separate them from HTML children
       component_children = []
@@ -316,11 +348,22 @@ module ReactiveViews
 
     private_class_method def self.transform_component_node(node, component_name_map, context)
       # Get the original PascalCase name from our map
-      component_name = component_name_map[node.name.downcase] || to_pascal_case(node.name)
+      lowercase_name = node.name.downcase
+      component_info = component_name_map[lowercase_name]
+
+      # Handle both old format (string) and new format (hash with :name and :attrs)
+      component_name = if component_info.is_a?(Hash) && component_info[:name]
+        component_info[:name]
+      elsif component_info.is_a?(String)
+        component_info
+      else
+        to_pascal_case(node.name)
+      end
+
       uuid = SecureRandom.uuid
 
       # Extract props from attributes
-      props = extract_props(node)
+      props = extract_props(node, component_info.is_a?(Hash) ? component_info : nil)
 
       # Render component via SSR
       ssr_html = ReactiveViews::Renderer.render(component_name, props)
@@ -335,21 +378,28 @@ module ReactiveViews
       create_island(node, component_name, uuid, props, ssr_html, context)
     end
 
-    private_class_method def self.extract_props(node)
+    private_class_method def self.extract_props(node, component_info = nil)
       props = {}
 
       node.attributes.each do |name, attr|
         value = attr.value
 
+        # Restore original attribute name case if we have component_info
+        original_name = if component_info && component_info[:attrs] && component_info[:attrs][name]
+          component_info[:attrs][name]
+        else
+          name
+        end
+
         # Try to parse as JSON if it looks like JSON
         if value.start_with?('{', '[') || value == 'true' || value == 'false' || value =~ /^\d+$/
           begin
-            props[name] = JSON.parse(value)
+            props[original_name] = JSON.parse(value)
           rescue JSON::ParserError
-            props[name] = value
+            props[original_name] = value
           end
         else
-          props[name] = value
+          props[original_name] = value
         end
       end
 

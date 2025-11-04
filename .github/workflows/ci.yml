@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        ruby-version: ['3.1', '3.2', '3.3']
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: ${{ matrix.ruby-version }}
+        bundler-cache: true
+    
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 18
+        cache: 'npm'
+    
+    - name: Install Node dependencies
+      run: npm install
+    
+    - name: Install spec/internal dependencies
+      run: |
+        cd spec/internal
+        npm install
+    
+    - name: Start SSR Server
+      run: |
+        RV_SSR_PORT=5175 PROJECT_ROOT=$PWD/spec/internal node node/ssr/server.mjs &
+        SSR_PID=$!
+        echo "SSR_PID=$SSR_PID" >> $GITHUB_ENV
+        
+        # Wait for SSR server to be ready
+        for i in {1..30}; do
+          if curl -s http://localhost:5175/ > /dev/null; then
+            echo "SSR server is ready"
+            break
+          fi
+          echo "Waiting for SSR server... ($i/30)"
+          sleep 1
+        done
+    
+    - name: Start Vite Dev Server
+      run: |
+        cd spec/internal
+        RV_VITE_PORT=5174 npx vite --config vite.test.config.ts &
+        VITE_PID=$!
+        echo "VITE_PID=$VITE_PID" >> $GITHUB_ENV
+        
+        # Wait for Vite to be ready
+        for i in {1..30}; do
+          if curl -s http://localhost:5174/ > /dev/null 2>&1; then
+            echo "Vite server is ready"
+            break
+          fi
+          echo "Waiting for Vite... ($i/30)"
+          sleep 1
+        done
+    
+    - name: Run tests
+      run: bundle exec rspec
+      env:
+        RAILS_ENV: test
+        RV_SSR_URL: http://localhost:5175
+    
+    - name: Stop servers
+      if: always()
+      run: |
+        if [ ! -z "$VITE_PID" ]; then kill $VITE_PID || true; fi
+        if [ ! -z "$SSR_PID" ]; then kill $SSR_PID || true; fi
+    
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v4
+      if: matrix.ruby-version == '3.3'
+      with:
+        fail_ci_if_error: false
+

@@ -1,0 +1,42 @@
+export default function HomePage({ 
+  page_title, 
+  users, 
+  current_user 
+}: { 
+  page_title: string;
+  users: Array<{ id: number; name: string; role: string }>;
+  current_user: { name: string; email: string };
+}) {
+  return (
+    <main>
+      <div className="card">
+        <h1>{page_title}</h1>
+        <p>This is a full-page TSX.ERB template rendered server-side by ReactiveViews.</p>
+        <p>Current user: <strong>{current_user.name}</strong> ({current_user.email})</p>
+      </div>
+
+      <div className="card">
+        <h2>Team Members ({users.length})</h2>
+        <div>
+          {users.map(user => (
+            <div key={user.id} className="user-card">
+              <h3>{user.name}</h3>
+              <p>Role: {user.role}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="card">
+        <h2>Try Interactive Components</h2>
+        <p>
+          <a href="/pages/interactive" style={{ color: '#007bff', textDecoration: 'none' }}>
+            Go to Interactive Counter →
+          </a>
+        </p>
+      </div>
+    </main>
+  );
+}
+
+

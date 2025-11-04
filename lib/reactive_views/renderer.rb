@@ -79,6 +79,18 @@ module ReactiveViews
         handle_error(component_name, props, e)
       end
 
+      # Render directly from a component file path (used for full-page TSX.ERB pipeline)
+      # @param component_path [String]
+      # @param props [Hash]
+      # @return [String] SSR HTML
+      def render_path(component_path, props = {})
+        return '' unless ReactiveViews.config.enabled
+
+        make_ssr_request(component_path, props)
+      rescue StandardError => e
+        handle_error(component_path, props, e)
+      end
+
       # Batch render multiple components in a single SSR request.
       #
       # This method significantly improves performance when rendering multiple components
