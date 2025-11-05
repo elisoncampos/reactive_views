@@ -110,11 +110,58 @@ jobs:
           free -h
           echo "Active processes:"
           ps aux | head -20
-          echo "Starting RSpec with verbose output..."
-          bundle exec rspec --format documentation --color
+          echo "Chrome/Selenium processes before tests:"
+          ps aux | grep -E "(chrome|chromedriver|selenium)" | grep -v grep || echo "None found"
+          echo ""
+          echo "Starting RSpec with verbose output and progress monitoring..."
+
+          # Function to monitor resources in background
+          monitor_resources() {
+            while true; do
+              sleep 5
+              echo ""
+              echo "--- [$(date +%H:%M:%S)] Resource Check ---"
+              echo "Memory:"
+              free -h | grep Mem
+              echo "Top memory consumers:"
+              ps aux --sort=-%mem | head -5 | tail -4
+              echo "Chrome processes:"
+              ps aux | grep -E "(chrome|chromedriver)" | grep -v grep | wc -l | xargs echo "  Count:"
+            done
+          }
+
+          # Start resource monitoring in background
+          monitor_resources &
+          MONITOR_PID=$!
+
+          # Trap to kill monitor on exit
+          trap "kill $MONITOR_PID 2>/dev/null || true" EXIT
+
+          # Run tests with explicit timeout per example
+          bundle exec rspec \
+            --format documentation \
+            --color \
+            --format progress \
+            --order random \
+            --seed $RANDOM || TEST_EXIT=$?
+
+          # Kill monitor
+          kill $MONITOR_PID 2>/dev/null || true
+          wait $MONITOR_PID 2>/dev/null || true
+
+          echo ""
+          echo "=== Final resource check ==="
+          free -h
+          echo "Chrome processes after tests:"
+          ps aux | grep -E "(chrome|chromedriver)" | grep -v grep || echo "None found"
+
+          # Exit with test result
+          exit ${TEST_EXIT:-0}
         env:
           RAILS_ENV: test
           RV_SSR_URL: http://localhost:5175
+          # Add explicit timeouts for Capybara
+          CAPYBARA_TIMEOUT: 10
         continue-on-error: false
 
       - name: Memory stats after tests
