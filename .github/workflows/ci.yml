@@ -17,6 +17,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: System Info
+        run: |
+          echo "=== System Information ==="
+          echo "OS: $(uname -a)"
+          echo "CPU cores: $(nproc)"
+          echo "Memory:"
+          free -h
+          echo "Disk space:"
+          df -h
+          echo "Ruby version matrix: ${{ matrix.ruby-version }}"
+
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
@@ -30,18 +41,29 @@ jobs:
           cache: "npm"
 
       - name: Install Node dependencies
-        run: npm install
+        run: |
+          echo "=== Installing Node dependencies ==="
+          npm install
+          echo "Memory after npm install:"
+          free -h
 
       - name: Install spec/internal dependencies
         run: |
+          echo "=== Installing spec/internal dependencies ==="
           cd spec/internal
           npm install
+          echo "Memory after spec/internal npm install:"
+          free -h
 
       - name: Start SSR Server
         run: |
+          echo "=== Starting SSR Server ==="
+          echo "Memory before starting SSR:"
+          free -h
           RV_SSR_PORT=5175 PROJECT_ROOT=$PWD/spec/internal node node/ssr/server.mjs &
           SSR_PID=$!
           echo "SSR_PID=$SSR_PID" >> $GITHUB_ENV
+          echo "SSR server started with PID: $SSR_PID"
 
           # Wait for SSR server to be ready
           for i in {1..30}; do
@@ -52,13 +74,20 @@ jobs:
             echo "Waiting for SSR server... ($i/30)"
             sleep 1
           done
+          echo "Memory after SSR server started:"
+          free -h
+          ps aux | grep -E "(node|ssr)" | grep -v grep || true
 
       - name: Start Vite Dev Server
         run: |
+          echo "=== Starting Vite Dev Server ==="
+          echo "Memory before starting Vite:"
+          free -h
           cd spec/internal
           RV_VITE_PORT=5174 npx vite --config vite.test.config.ts &
           VITE_PID=$!
           echo "VITE_PID=$VITE_PID" >> $GITHUB_ENV
+          echo "Vite server started with PID: $VITE_PID"
 
           # Wait for Vite to be ready
           for i in {1..30}; do
@@ -69,18 +98,54 @@ jobs:
             echo "Waiting for Vite... ($i/30)"
             sleep 1
           done
+          echo "Memory after Vite server started:"
+          free -h
+          ps aux | grep -E "(vite|node)" | grep -v grep || true
 
       - name: Run tests
-        run: bundle exec rspec
+        timeout-minutes: 30
+        run: |
+          echo "=== Running Tests ==="
+          echo "Memory before tests:"
+          free -h
+          echo "Active processes:"
+          ps aux | head -20
+          echo "Starting RSpec with verbose output..."
+          bundle exec rspec --format documentation --color
         env:
           RAILS_ENV: test
           RV_SSR_URL: http://localhost:5175
+        continue-on-error: false
+
+      - name: Memory stats after tests
+        if: always()
+        run: |
+          echo "=== Memory after tests ==="
+          free -h
+          echo "Top memory consumers:"
+          ps aux --sort=-%mem | head -10
 
       - name: Stop servers
         if: always()
         run: |
-          if [ ! -z "$VITE_PID" ]; then kill $VITE_PID || true; fi
-          if [ ! -z "$SSR_PID" ]; then kill $SSR_PID || true; fi
+          echo "=== Stopping servers ==="
+          if [ ! -z "$VITE_PID" ]; then
+            echo "Stopping Vite (PID: $VITE_PID)"
+            kill $VITE_PID || true
+            sleep 2
+            kill -9 $VITE_PID 2>/dev/null || true
+          fi
+          if [ ! -z "$SSR_PID" ]; then
+            echo "Stopping SSR (PID: $SSR_PID)"
+            kill $SSR_PID || true
+            sleep 2
+            kill -9 $SSR_PID 2>/dev/null || true
+          fi
+          # Clean up any remaining node processes
+          pkill -f "vite.*test.config" || true
+          pkill -f "node.*ssr/server" || true
+          echo "Final memory:"
+          free -h
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v4
