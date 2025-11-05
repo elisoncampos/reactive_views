@@ -25,10 +25,10 @@ RSpec.describe ReactiveViews::PropsInference do
         TSX
 
         stub_request(:post, 'http://localhost:5175/infer-props')
-          .to_return(status: 200, body: { keys: ['name', 'age', 'email'] }.to_json)
+          .to_return(status: 200, body: { keys: %w[name age email] }.to_json)
 
         keys = described_class.infer_props(tsx_content)
-        expect(keys).to eq(['name', 'age', 'email'])
+        expect(keys).to eq(%w[name age email])
       end
 
       it 'handles empty destructuring' do
@@ -56,10 +56,10 @@ RSpec.describe ReactiveViews::PropsInference do
         TSX
 
         stub_request(:post, 'http://localhost:5175/infer-props')
-          .to_return(status: 200, body: { keys: ['title', 'description'] }.to_json)
+          .to_return(status: 200, body: { keys: %w[title description] }.to_json)
 
         keys = described_class.infer_props(tsx_content)
-        expect(keys).to eq(['title', 'description'])
+        expect(keys).to eq(%w[title description])
       end
     end
 
@@ -73,7 +73,7 @@ RSpec.describe ReactiveViews::PropsInference do
 
         # First call should hit the server
         stub = stub_request(:post, 'http://localhost:5175/infer-props')
-          .to_return(status: 200, body: { keys: ['name'] }.to_json)
+               .to_return(status: 200, body: { keys: ['name'] }.to_json)
 
         keys1 = described_class.infer_props(tsx_content)
         expect(keys1).to eq(['name'])
@@ -90,12 +90,12 @@ RSpec.describe ReactiveViews::PropsInference do
         tsx_content2 = 'export default function C2({ b }: P) { return <div />; }'
 
         stub1 = stub_request(:post, 'http://localhost:5175/infer-props')
-          .with(body: hash_including('tsxContent' => tsx_content1))
-          .to_return(status: 200, body: { keys: ['a'] }.to_json)
+                .with(body: hash_including('tsxContent' => tsx_content1))
+                .to_return(status: 200, body: { keys: ['a'] }.to_json)
 
         stub2 = stub_request(:post, 'http://localhost:5175/infer-props')
-          .with(body: hash_including('tsxContent' => tsx_content2))
-          .to_return(status: 200, body: { keys: ['b'] }.to_json)
+                .with(body: hash_including('tsxContent' => tsx_content2))
+                .to_return(status: 200, body: { keys: ['b'] }.to_json)
 
         keys1 = described_class.infer_props(tsx_content1)
         keys2 = described_class.infer_props(tsx_content2)
@@ -105,7 +105,6 @@ RSpec.describe ReactiveViews::PropsInference do
         expect(stub1).to have_been_requested.once
         expect(stub2).to have_been_requested.once
       end
-
     end
 
     context 'with error handling' do

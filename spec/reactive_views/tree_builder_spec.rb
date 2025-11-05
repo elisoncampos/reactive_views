@@ -6,7 +6,7 @@ RSpec.describe 'ReactiveViews::TagTransformer Tree Building' do
   describe '.build_component_tree' do
     def preprocess_html(html)
       # Apply same preprocessing as transform method
-      html.gsub(/<([A-Z][a-zA-Z0-9]*)\s*([^>]*?)\/\s*>/, '<\1 \2></\1>')
+      html.gsub(%r{<([A-Z][a-zA-Z0-9]*)\s*([^>]*?)/\s*>}, '<\1 \2></\1>')
     end
 
     it 'identifies root components correctly' do

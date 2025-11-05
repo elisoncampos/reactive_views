@@ -10,7 +10,7 @@ module ReactiveViews
 
       # Normalize paths to absolute paths
       search_paths = paths.map do |path|
-        if path.is_a?(Pathname) || path.start_with?("/")
+        if path.is_a?(Pathname) || path.start_with?('/')
           path.to_s
         elsif defined?(Rails)
           Rails.root.join(path).to_s
@@ -37,7 +37,7 @@ module ReactiveViews
           # Try each extension
           EXTENSIONS.each do |ext|
             # Search recursively
-            pattern = File.join(base_path, "**", "#{variant}#{ext}")
+            pattern = File.join(base_path, '**', "#{variant}#{ext}")
             matches = Dir.glob(pattern)
 
             if matches.any?
@@ -53,8 +53,6 @@ module ReactiveViews
       log_resolution_failure(component_name, searched_locations)
       nil
     end
-
-    private
 
     # Generate all naming convention variants for a component name
     # Supports: PascalCase, snake_case, camelCase, kebab-case
@@ -83,7 +81,7 @@ module ReactiveViews
       name
         .gsub(/([A-Z]+)([A-Z][a-z])/, '\1_\2')
         .gsub(/([a-z\d])([A-Z])/, '\1_\2')
-        .tr("-", "_")
+        .tr('-', '_')
         .downcase
     end
 
@@ -91,6 +89,7 @@ module ReactiveViews
     # Example: "HelloWorld" -> "helloWorld"
     def self.to_camel_case(name)
       return name if name.empty?
+
       name[0].downcase + name[1..]
     end
 
@@ -100,14 +99,14 @@ module ReactiveViews
       name
         .gsub(/([A-Z]+)([A-Z][a-z])/, '\1-\2')
         .gsub(/([a-z\d])([A-Z])/, '\1-\2')
-        .tr("_", "-")
+        .tr('_', '-')
         .downcase
     end
 
     def self.log_resolution_success(component_name, path, variant)
       return unless defined?(Rails) && Rails.logger
 
-      variant_info = variant != component_name ? " (as '#{variant}')" : ""
+      variant_info = variant != component_name ? " (as '#{variant}')" : ''
       Rails.logger.debug("[ReactiveViews] Resolved #{component_name}#{variant_info} to #{path}")
     end
 
@@ -115,7 +114,7 @@ module ReactiveViews
       return unless defined?(Rails) && Rails.logger
 
       Rails.logger.error("[ReactiveViews] Component '#{component_name}' not found")
-      Rails.logger.error("[ReactiveViews] Searched in:")
+      Rails.logger.error('[ReactiveViews] Searched in:')
       searched_locations.each do |location|
         Rails.logger.error("  - #{location}")
       end

@@ -81,10 +81,10 @@ RSpec.describe 'Tree Rendering Integration', type: :request do
         .and_return('/path/to/Component.tsx')
 
       stub = stub_request(:post, 'http://localhost:5175/render-tree')
-        .with { |req|
-          body = JSON.parse(req.body)
-          body['htmlChildren'].to_s.include?('Hello')
-        }
+             .with do |req|
+        body = JSON.parse(req.body)
+        body['htmlChildren'].to_s.include?('Hello')
+      end
         .to_return(status: 200, body: { html: '<div>Container with children</div>' }.to_json)
 
       html = '<Container><div>Hello World</div><ChildComponent /></Container>'
@@ -167,7 +167,7 @@ RSpec.describe 'Tree Rendering Integration', type: :request do
         }.to_json)
 
       html = '<Component1 /><Component2 />'
-      result = ReactiveViews::TagTransformer.transform(html)
+      ReactiveViews::TagTransformer.transform(html)
 
       expect(WebMock).to have_requested(:post, 'http://localhost:5175/batch-render').once
       expect(WebMock).not_to have_requested(:post, 'http://localhost:5175/render-tree')
@@ -181,7 +181,7 @@ RSpec.describe 'Tree Rendering Integration', type: :request do
         .to_return(status: 200, body: { html: '<div>Nested</div>' }.to_json)
 
       html = '<Parent><Child /></Parent>'
-      result = ReactiveViews::TagTransformer.transform(html)
+      ReactiveViews::TagTransformer.transform(html)
 
       expect(WebMock).to have_requested(:post, 'http://localhost:5175/render-tree').once
       expect(WebMock).not_to have_requested(:post, 'http://localhost:5175/batch-render')
@@ -202,7 +202,7 @@ RSpec.describe 'Tree Rendering Integration', type: :request do
         }.to_json)
 
       html = '<Parent><Child /></Parent>'
-      result = ReactiveViews::TagTransformer.transform(html)
+      ReactiveViews::TagTransformer.transform(html)
 
       expect(WebMock).to have_requested(:post, 'http://localhost:5175/batch-render').once
       expect(WebMock).not_to have_requested(:post, 'http://localhost:5175/render-tree')

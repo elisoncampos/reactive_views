@@ -1,9 +1,11 @@
+# frozen_string_literal: true
+
 class TestController < ActionController::Base
   include ReactiveViewsHelper
-  layout "application"
+  layout 'application'
 
   def with_component
-    @message = "Hello from TestController"
+    @message = 'Hello from TestController'
   end
 
   def with_error

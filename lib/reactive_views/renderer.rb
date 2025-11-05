@@ -156,9 +156,7 @@ module ReactiveViews
         return { error: resolved_tree[:error] } if resolved_tree[:error]
 
         # Make tree SSR request
-        result = make_tree_ssr_request(resolved_tree)
-
-        result
+        make_tree_ssr_request(resolved_tree)
       rescue StandardError => e
         { error: e.message }
       end
@@ -400,7 +398,7 @@ module ReactiveViews
         { error: 'SSR tree request timed out' }
       end
 
-      def handle_error(component_name, props, error)
+      def handle_error(component_name, _props, error)
         # Log the error
         if defined?(Rails) && Rails.logger
           Rails.logger.error("[ReactiveViews] SSR Error for #{component_name}: #{error.message}")

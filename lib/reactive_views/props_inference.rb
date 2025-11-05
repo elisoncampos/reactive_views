@@ -77,15 +77,13 @@ module ReactiveViews
 
         request = Net::HTTP::Post.new(uri.path, 'Content-Type' => 'application/json')
         request.body = JSON.generate({
-          tsxContent: tsx_content,
-          contentHash: content_digest
-        })
+                                       tsxContent: tsx_content,
+                                       contentHash: content_digest
+                                     })
 
         response = http.request(request)
 
-        unless response.is_a?(Net::HTTPSuccess)
-          raise InferenceError, "HTTP #{response.code}: #{response.body}"
-        end
+        raise InferenceError, "HTTP #{response.code}: #{response.body}" unless response.is_a?(Net::HTTPSuccess)
 
         result = JSON.parse(response.body)
         result['keys'] || []
@@ -94,7 +92,7 @@ module ReactiveViews
       rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH => e
         raise InferenceError, "Cannot connect to SSR server: #{e.message}"
       rescue Net::ReadTimeout
-        raise InferenceError, "Inference request timed out"
+        raise InferenceError, 'Inference request timed out'
       end
 
       def log_error(message)

@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
-RSpec.shared_context "with test component" do
-  let(:component_name) { "TestComponent" }
+RSpec.shared_context 'with test component' do
+  let(:component_name) { 'TestComponent' }
   let(:component_path) { File.join(test_components_dir, "#{component_name}.tsx") }
-  let(:test_components_dir) { File.join(__dir__, "..", "fixtures", "components") }
+  let(:test_components_dir) { File.join(__dir__, '..', 'fixtures', 'components') }
 
   let(:simple_component_code) do
     <<~TSX
@@ -25,7 +25,7 @@ RSpec.shared_context "with test component" do
   end
 end
 
-RSpec.shared_context "with rails controller" do
+RSpec.shared_context 'with rails controller' do
   let(:controller) do
     Class.new(ActionController::Base) do
       include ReactiveViewsHelper
@@ -37,8 +37,8 @@ RSpec.shared_context "with rails controller" do
   end
 end
 
-RSpec.shared_context "with mock ssr server" do
+RSpec.shared_context 'with mock ssr server' do
   before do
-    allow(ReactiveViews::Renderer).to receive(:render).and_return("<div>Mocked SSR</div>")
+    allow(ReactiveViews::Renderer).to receive(:render).and_return('<div>Mocked SSR</div>')
   end
 end

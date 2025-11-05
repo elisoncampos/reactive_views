@@ -80,7 +80,7 @@ RSpec.describe ReactiveViews::TagTransformer do
       it 'parses JSON props correctly' do
         html = %(<DataComponent items='["a","b","c"]' config='{"enabled":true}' />)
 
-        allow(ReactiveViews::Renderer).to receive(:render) do |component, props|
+        allow(ReactiveViews::Renderer).to receive(:render) do |_component, props|
           expect(props['items']).to eq(%w[a b c])
           expect(props['config']).to eq({ 'enabled' => true })
           '<div>Rendered</div>'

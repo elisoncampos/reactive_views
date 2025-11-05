@@ -102,7 +102,7 @@ RSpec.describe 'TagTransformer Batch Rendering Integration', type: :request do
         expect(first_script_pos).to be > last_component_pos
 
         # All three scripts should be adjacent (no components between them)
-        scripts_section = result[first_script_pos..-1]
+        scripts_section = result[first_script_pos..]
         expect(scripts_section).not_to include('data-component=')
       end
 

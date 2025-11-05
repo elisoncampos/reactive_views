@@ -12,11 +12,12 @@ Gem::Specification.new do |spec|
   spec.description = 'ReactiveViews brings React components to Rails with SSR and client-side hydration islands.'
   spec.homepage = 'https://github.com/elisoncampos/reactive_views'
   spec.license = 'MIT'
-  spec.required_ruby_version = '>= 2.7.0'
+  spec.required_ruby_version = '>= 3.2.0'
 
   spec.metadata['homepage_uri'] = spec.homepage
   spec.metadata['source_code_uri'] = spec.homepage
   spec.metadata['changelog_uri'] = "#{spec.homepage}/blob/master/CHANGELOG.md"
+  spec.metadata['rubygems_mfa_required'] = 'true'
 
   gemspec = File.basename(__FILE__)
   spec.files = IO.popen(%w[git ls-files -z], chdir: __dir__, err: IO::NULL) do |ls|
@@ -39,6 +40,11 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency 'puma', '~> 6.0'
   spec.add_development_dependency 'rspec', '~> 3.0'
   spec.add_development_dependency 'rspec-rails', '~> 6.0'
+  spec.add_development_dependency 'rubocop', '~> 1.21'
+  spec.add_development_dependency 'rubocop-capybara', '~> 2.21'
+  spec.add_development_dependency 'rubocop-rake', '~> 0.6'
+  spec.add_development_dependency 'rubocop-rspec', '~> 3.0'
+  spec.add_development_dependency 'rubocop-rspec_rails', '~> 2.28'
   spec.add_development_dependency 'selenium-webdriver', '~> 4.16'
   spec.add_development_dependency 'simplecov', '~> 0.22'
   spec.add_development_dependency 'sqlite3', '~> 2.0'

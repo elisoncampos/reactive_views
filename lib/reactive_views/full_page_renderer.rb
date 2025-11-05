@@ -46,9 +46,9 @@ module ReactiveViews
 
           begin
             # Set formats to include :tsx so partials are found
-            view_context.lookup_context.formats = [:tsx, :html]
+            view_context.lookup_context.formats = %i[tsx html]
             # Ensure :tsx handler is in the lookup
-            view_context.lookup_context.handlers = [:tsx, :erb, :raw, :html, :builder, :ruby]
+            view_context.lookup_context.handlers = %i[tsx erb raw html builder ruby]
 
             # Read the template source
             template_source = File.read(template_path)
@@ -101,9 +101,9 @@ module ReactiveViews
 
       def write_temp_tsx(tsx_content)
         temp_dir = if defined?(Rails)
-                     Rails.root.join("tmp", "reactive_views_full_page")
+                     Rails.root.join('tmp', 'reactive_views_full_page')
                    else
-                     File.join(Dir.tmpdir, "reactive_views_full_page")
+                     File.join(Dir.tmpdir, 'reactive_views_full_page')
                    end
 
         FileUtils.mkdir_p(temp_dir)
@@ -123,10 +123,10 @@ module ReactiveViews
 
         # Merge with explicit reactive_view_props
         explicit_props = if controller.respond_to?(:reactive_view_props, true)
-                          controller.send(:reactive_view_props)
-                        else
-                          {}
-                        end
+                           controller.send(:reactive_view_props)
+                         else
+                           {}
+                         end
 
         all_props = assigns.merge(explicit_props)
 

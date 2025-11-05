@@ -69,7 +69,7 @@ module ReactiveViews
         html.sub('</body>', "#{scripts_html}\n</body>")
       else
         # No body tag, append at end
-        html + "\n" + scripts_html
+        "#{html}\n#{scripts_html}"
       end
     end
 
@@ -97,7 +97,7 @@ module ReactiveViews
     # Transform components using tree rendering (for nested components)
     # This method sends the entire component tree to the SSR server
     # which renders it as a single React tree, enabling true composition
-    private_class_method def self.tree_transform_components(tree_nodes, component_name_map, context)
+    private_class_method def self.tree_transform_components(tree_nodes, _component_name_map, context)
       # Check nesting depth and warn if too deep
       max_depth = calculate_tree_depth(tree_nodes)
       if (max_depth > ReactiveViews.config.max_nesting_depth_warning) && defined?(Rails) && Rails.logger
@@ -189,12 +189,12 @@ module ReactiveViews
 
         # Handle both old format (string) and new format (hash with :name and :attrs)
         component_name = if component_info.is_a?(Hash) && component_info[:name]
-          component_info[:name]
-        elsif component_info.is_a?(String)
-          component_info
-        else
-          to_pascal_case(node.name)
-        end
+                           component_info[:name]
+                         elsif component_info.is_a?(String)
+                           component_info
+                         else
+                           to_pascal_case(node.name)
+                         end
 
         uuid = SecureRandom.uuid
         props = extract_props(node, component_info.is_a?(Hash) ? component_info : nil)
@@ -314,12 +314,12 @@ module ReactiveViews
 
       # Handle both old format (string) and new format (hash with :name and :attrs)
       component_name = if component_info.is_a?(Hash) && component_info[:name]
-        component_info[:name]
-      elsif component_info.is_a?(String)
-        component_info
-      else
-        to_pascal_case(node.name)
-      end
+                         component_info[:name]
+                       elsif component_info.is_a?(String)
+                         component_info
+                       else
+                         to_pascal_case(node.name)
+                       end
 
       props = extract_props(node, component_info.is_a?(Hash) ? component_info : nil)
 
@@ -353,12 +353,12 @@ module ReactiveViews
 
       # Handle both old format (string) and new format (hash with :name and :attrs)
       component_name = if component_info.is_a?(Hash) && component_info[:name]
-        component_info[:name]
-      elsif component_info.is_a?(String)
-        component_info
-      else
-        to_pascal_case(node.name)
-      end
+                         component_info[:name]
+                       elsif component_info.is_a?(String)
+                         component_info
+                       else
+                         to_pascal_case(node.name)
+                       end
 
       uuid = SecureRandom.uuid
 
@@ -386,10 +386,10 @@ module ReactiveViews
 
         # Restore original attribute name case if we have component_info
         original_name = if component_info && component_info[:attrs] && component_info[:attrs][name]
-          component_info[:attrs][name]
-        else
-          name
-        end
+                          component_info[:attrs][name]
+                        else
+                          name
+                        end
 
         # Try to parse as JSON if it looks like JSON
         if value.start_with?('{', '[') || value == 'true' || value == 'false' || value =~ /^\d+$/

@@ -164,9 +164,9 @@ RSpec.describe 'SSR Batch Rendering', type: :request do
       it 'returns 400 for non-array components' do
         # This tests that the SSR server validates input
         # We're stubbing the expected behavior
-        response = stub_request(:post, 'http://localhost:5175/batch-render')
-                   .with(body: { components: 'not an array' }.to_json)
-                   .to_return(status: 400, body: { error: 'Expected components array' }.to_json)
+        stub_request(:post, 'http://localhost:5175/batch-render')
+          .with(body: { components: 'not an array' }.to_json)
+          .to_return(status: 400, body: { error: 'Expected components array' }.to_json)
 
         # Trigger the request
         begin
@@ -236,8 +236,8 @@ RSpec.describe 'SSR Batch Rendering', type: :request do
       it 'still returns 200 status for batch request' do
         # Batch endpoint should return 200 even if individual components fail
         # Errors are per-component, not batch-level
-        stub = stub_request(:post, 'http://localhost:5175/batch-render')
-               .to_return(status: 200, body: batch_response)
+        stub_request(:post, 'http://localhost:5175/batch-render')
+          .to_return(status: 200, body: batch_response)
 
         uri = URI.parse('http://localhost:5175/batch-render')
         http = Net::HTTP.new(uri.host, uri.port)

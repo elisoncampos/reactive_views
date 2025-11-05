@@ -242,7 +242,7 @@ RSpec.describe ReactiveViews::Renderer do
         stub_request(:post, 'http://localhost:5175/render')
           .to_return(status: 200, body: { 'html' => '<div>Fallback</div>' }.to_json)
 
-        results = described_class.batch_render(component_specs)
+        described_class.batch_render(component_specs)
 
         # Should have made 1 batch request + 3 individual fallback requests
         expect(WebMock).to have_requested(:post, 'http://localhost:5175/batch-render').once
@@ -273,7 +273,7 @@ RSpec.describe ReactiveViews::Renderer do
         stub_request(:post, 'http://localhost:5175/render')
           .to_return(status: 200, body: { 'html' => '<div>Fallback</div>' }.to_json)
 
-        results = described_class.batch_render(component_specs)
+        described_class.batch_render(component_specs)
 
         expect(WebMock).to have_requested(:post, 'http://localhost:5175/render').times(3)
       end

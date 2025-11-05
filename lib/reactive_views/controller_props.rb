@@ -20,14 +20,12 @@ module ReactiveViews
     #   end
     def reactive_view_props(hash = nil)
       @_reactive_view_props ||= {}
-      if hash
-        @_reactive_view_props = deep_merge(@_reactive_view_props, hash.deep_symbolize_keys)
-      end
+      @_reactive_view_props = deep_merge(@_reactive_view_props, hash.deep_symbolize_keys) if hash
       @_reactive_view_props
     end
 
     # Alias for convenience
-    alias_method :reactive_props, :reactive_view_props
+    alias reactive_props reactive_view_props
 
     private
 
