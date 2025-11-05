@@ -7,6 +7,9 @@ RSpec.describe 'TSX ERB partial composition', type: :request do
   let(:users_views) { views_root.join('users') }
 
   before do
+    # Clear view lookup context before creating templates
+    ActionView::LookupContext::DetailsKey.clear if defined?(ActionView::LookupContext::DetailsKey)
+
     FileUtils.mkdir_p(users_views)
 
     # Enable full-page rendering

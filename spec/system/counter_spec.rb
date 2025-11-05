@@ -134,10 +134,16 @@ RSpec.describe 'Counter Component with useState', type: :system, js: true do
     loop do
       begin
         uri = URI.parse(url)
-        response = Net::HTTP.get_response(uri)
+        http = Net::HTTP.new(uri.host, uri.port)
+        http.open_timeout = 2
+        http.read_timeout = 2
+        response = http.get(uri.request_uri)
         break if response.code.to_i < 500
-      rescue StandardError
-        # Server not ready yet
+      rescue Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, SocketError
+        # Server not ready yet - these are expected while waiting
+      rescue StandardError => e
+        # Other errors - log but continue waiting
+        puts "Warning: Error checking server #{url}: #{e.class} - #{e.message}" if ENV['CI']
       end
 
       raise "Server at #{url} did not start within #{timeout} seconds" if Time.now - start_time > timeout

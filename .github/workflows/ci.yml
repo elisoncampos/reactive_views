@@ -65,15 +65,24 @@ jobs:
           echo "SSR_PID=$SSR_PID" >> $GITHUB_ENV
           echo "SSR server started with PID: $SSR_PID"
 
-          # Wait for SSR server to be ready
+          # Wait for SSR server to be ready with proper verification
+          SSR_READY=false
           for i in {1..30}; do
-            if curl -s http://localhost:5175/ > /dev/null; then
-              echo "SSR server is ready"
+            if curl -s -f http://localhost:5175/ > /dev/null 2>&1; then
+              echo "SSR server is ready (attempt $i)"
+              SSR_READY=true
               break
             fi
             echo "Waiting for SSR server... ($i/30)"
             sleep 1
           done
+
+          if [ "$SSR_READY" != "true" ]; then
+            echo "ERROR: SSR server failed to start"
+            ps aux | grep -E "(node|ssr)" | grep -v grep || true
+            exit 1
+          fi
+
           echo "Memory after SSR server started:"
           free -h
           ps aux | grep -E "(node|ssr)" | grep -v grep || true
@@ -89,18 +98,47 @@ jobs:
           echo "VITE_PID=$VITE_PID" >> $GITHUB_ENV
           echo "Vite server started with PID: $VITE_PID"
 
-          # Wait for Vite to be ready
+          # Wait for Vite to be ready with proper verification
+          VITE_READY=false
           for i in {1..30}; do
-            if curl -s http://localhost:5174/ > /dev/null 2>&1; then
-              echo "Vite server is ready"
+            if curl -s -f http://localhost:5174/ > /dev/null 2>&1; then
+              echo "Vite server is ready (attempt $i)"
+              VITE_READY=true
               break
             fi
             echo "Waiting for Vite... ($i/30)"
             sleep 1
           done
+
+          if [ "$VITE_READY" != "true" ]; then
+            echo "ERROR: Vite server failed to start"
+            ps aux | grep -E "(vite|node)" | grep -v grep || true
+            exit 1
+          fi
+
           echo "Memory after Vite server started:"
           free -h
           ps aux | grep -E "(vite|node)" | grep -v grep || true
+
+      - name: Verify servers before tests
+        run: |
+          echo "=== Verifying servers are ready ==="
+          echo "Checking Vite server (http://localhost:5174)..."
+          if ! curl -s -f http://localhost:5174/ > /dev/null 2>&1; then
+            echo "ERROR: Vite server is not accessible"
+            ps aux | grep -E "(vite|node)" | grep -v grep || true
+            exit 1
+          fi
+          echo "Vite server is accessible ✓"
+
+          echo "Checking SSR server (http://localhost:5175)..."
+          if ! curl -s -f http://localhost:5175/ > /dev/null 2>&1; then
+            echo "ERROR: SSR server is not accessible"
+            ps aux | grep -E "(node|ssr)" | grep -v grep || true
+            exit 1
+          fi
+          echo "SSR server is accessible ✓"
+          echo "Both servers verified and ready for tests"
 
       - name: Run tests
         timeout-minutes: 30
