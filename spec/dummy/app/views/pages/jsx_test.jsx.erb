@@ -1,0 +1,14 @@
+<%#
+  Note: This is a .jsx.erb file.
+  It will be compiled by ERB first, then treated as JSX.
+%>
+const JsxTest = ({ message }) => {
+  return (
+    <div className="jsx-test">
+      <h1>JSX Support Test</h1>
+      <p>{message}</p>
+    </div>
+  );
+};
+
+export default JsxTest;

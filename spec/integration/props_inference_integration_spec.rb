@@ -20,7 +20,7 @@ RSpec.describe 'Props inference integration', type: :request do
       include ReactiveViewsHelper
 
       def index
-        @users = [{ id: 1, name: 'Alice' }]
+        @users = [ { id: 1, name: 'Alice' } ]
         @secret = 'should_not_leak'
         reactive_view_props(admin: true, current_user: { id: 1, name: 'Admin' })
         render :index
@@ -47,24 +47,20 @@ RSpec.describe 'Props inference integration', type: :request do
       }
     TSX
 
-    # Stub inference to return only the used keys
-    stub_request(:post, 'http://localhost:5175/infer-props')
-      .to_return(status: 200, body: { keys: %w[users current_user] }.to_json)
-
     captured_props = nil
-    stub_request(:post, 'http://localhost:5175/render').to_return do |request|
-      payload = JSON.parse(request.body)
-      captured_props = payload['props']
-      { status: 200, body: { html: '<div>SSR Inferred</div>' }.to_json }
+    allow(ReactiveViews::Renderer).to receive(:render_path).and_wrap_original do |method, path, props|
+      captured_props = props.transform_keys(&:to_s)
+      method.call(path, props)
     end
 
     get '/users'
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include('SSR Inferred')
+    normalized = response.body.gsub('<!-- -->', '')
+    expect(normalized).to include('Users: 1 - Admin')
 
     # Ensure only the inferred keys plus explicit extras were sent
-    expect(captured_props.keys.map(&:to_s)).to include('users', 'current_user', 'admin')
-    expect(captured_props.keys.map(&:to_s)).not_to include('secret')
+    expect(captured_props.keys).to include('users', 'current_user', 'admin')
+    expect(captured_props.keys).not_to include('secret')
   end
 end

@@ -69,7 +69,7 @@ RSpec.describe 'TagTransformer Batch Rendering Integration', type: :request do
         result = ReactiveViews::TagTransformer.transform(html_with_multiple_components)
 
         # Count island containers (divs + script tags)
-        island_count = result.scan(/data-island-uuid/).size
+        island_count = result.scan('data-island-uuid').size
         expect(island_count).to eq(6) # 3 divs + 3 script tags
       end
 
@@ -93,7 +93,7 @@ RSpec.describe 'TagTransformer Batch Rendering Integration', type: :request do
         result = ReactiveViews::TagTransformer.transform(html_with_body)
 
         # Should have 3 script tags
-        script_count = result.scan(/<script/).size
+        script_count = result.scan('<script').size
         expect(script_count).to eq(3)
 
         # Scripts should be aggregated at the end (after all components)

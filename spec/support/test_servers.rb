@@ -1,0 +1,103 @@
+# frozen_string_literal: true
+
+require 'net/http'
+require 'uri'
+
+module TestServers
+  VITE_PORT = 5174
+  SSR_PORT = 5175
+  SPEC_DUMMY_DIR = File.expand_path('../dummy', __dir__)
+
+  class << self
+    attr_reader :vite_pid, :ssr_pid
+
+    def start
+      if ENV['CI']
+        wait_for_server("http://localhost:#{VITE_PORT}")
+        wait_for_server("http://localhost:#{SSR_PORT}")
+        return
+      end
+
+      puts 'Starting test servers...'
+
+      # Kill any processes using our ports to avoid conflicts
+      [ VITE_PORT, SSR_PORT ].each do |port|
+        system("lsof -ti:#{port} | xargs kill -9 2>/dev/null", out: File::NULL, err: File::NULL)
+      end
+      sleep 1
+
+      # Start Vite dev server
+      @vite_pid = spawn(
+        { 'RV_VITE_PORT' => VITE_PORT.to_s },
+        'npx vite --config vite.test.config.ts',
+        chdir: SPEC_DUMMY_DIR,
+        out: File::NULL,
+        err: File::NULL
+      )
+
+      # Start SSR server
+      gem_root = File.expand_path('../../', __dir__)
+      ssr_script = File.join(gem_root, 'node', 'ssr', 'server.mjs')
+
+      # IMPORTANT: Run node in the gem root so it finds node_modules correctly
+      @ssr_pid = spawn(
+        { 'RV_SSR_PORT' => SSR_PORT.to_s, 'PROJECT_ROOT' => SPEC_DUMMY_DIR },
+        'node', ssr_script,
+        chdir: gem_root, # Run from gem root where node_modules are
+        out: File::NULL,
+        err: File::NULL
+      )
+
+      wait_for_server("http://localhost:#{VITE_PORT}")
+      wait_for_server("http://localhost:#{SSR_PORT}")
+      puts 'Test servers started.'
+    end
+
+    def stop
+      return if ENV['CI']
+
+      puts 'Stopping test servers...'
+      Process.kill('TERM', @vite_pid) if @vite_pid
+      Process.kill('TERM', @ssr_pid) if @ssr_pid
+
+      begin
+        Process.wait(@vite_pid) if @vite_pid
+      rescue StandardError
+        nil
+      end
+
+      begin
+        Process.wait(@ssr_pid) if @ssr_pid
+      rescue StandardError
+        nil
+      end
+      puts 'Test servers stopped.'
+    end
+
+    private
+
+    def wait_for_server(url, timeout: 15)
+      start_time = Time.now
+      loop do
+        begin
+          uri = URI.parse(url)
+          http = Net::HTTP.new(uri.host, uri.port)
+          http.open_timeout = 1
+          http.read_timeout = 1
+          response = http.get(uri.request_uri)
+          break if response.code.to_i < 500
+        rescue Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, SocketError
+          # Server not ready yet
+        rescue StandardError
+          # Ignore other errors
+        end
+
+        if Time.now - start_time > timeout
+          raise "Server at #{url} did not start within #{timeout} seconds"
+        end
+
+        sleep 0.5
+      end
+    end
+  end
+end

@@ -187,6 +187,31 @@ RSpec.describe ReactiveViews::TagTransformer do
       end
     end
 
+    context 'with SVG tags' do
+      it 'does not treat svg elements as React components' do
+        html = <<~HTML
+          <div>
+            <svg class="icon" viewBox="0 0 24 24">
+              <path d="M3 3h18" />
+            </svg>
+            <MyComponent />
+          </div>
+        HTML
+
+        expect(ReactiveViews::Renderer).to receive(:batch_render) do |component_specs|
+          expect(component_specs.length).to eq(1)
+          expect(component_specs.first[:component_name]).to eq('MyComponent')
+          [ { html: '<div>SSR Content</div>' } ]
+        end
+
+        result = described_class.transform(html)
+
+        expect(result).to include('<svg')
+        expect(result).to include('data-component="MyComponent"')
+        expect(result).not_to include('data-component="Svg"')
+      end
+    end
+
     context 'when SSR fails' do
       before do
         # Mock component resolution to succeed
@@ -195,7 +220,7 @@ RSpec.describe ReactiveViews::TagTransformer do
 
         # Mock batch_render to return error
         allow(ReactiveViews::Renderer).to receive(:batch_render)
-          .and_return([{ error: 'Component failed to render' }])
+          .and_return([ { error: 'Component failed to render' } ])
       end
 
       it 'generates error overlay in development' do

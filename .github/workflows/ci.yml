@@ -7,233 +7,107 @@ on:
     branches: [main, master]
 
 jobs:
-  test:
+  unit:
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        ruby-version: ["3.2", "3.3"]
+    env:
+      RAILS_ENV: test
+      CI: true
+      RV_VITE_PORT: 5174
+      RV_SSR_PORT: 5175
+      REACTIVE_VIEWS_SKIP_SERVERS: "1"
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: System Info
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4.0"
+          bundler-cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "package-lock.json"
+
+      - name: Install NPM dependencies
         run: |
-          echo "=== System Information ==="
-          echo "OS: $(uname -a)"
-          echo "CPU cores: $(nproc)"
-          echo "Memory:"
-          free -h
-          echo "Disk space:"
-          df -h
-          echo "Ruby version matrix: ${{ matrix.ruby-version }}"
+          npm ci
+
+      - name: Run unit specs
+        run: bundle exec rspec --tag ~type:system
+
+  system:
+    needs: unit
+    runs-on: ubuntu-latest
+    env:
+      RAILS_ENV: test
+      CI: true
+      RV_VITE_PORT: 5174
+      RV_SSR_PORT: 5175
+
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: ${{ matrix.ruby-version }}
+          ruby-version: "3.4.0"
           bundler-cache: true
 
-      - name: Set up Node
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: "20"
           cache: "npm"
+          cache-dependency-path: "package-lock.json"
 
-      - name: Install Node dependencies
+      - name: Install NPM dependencies
         run: |
-          echo "=== Installing Node dependencies ==="
-          npm install
-          echo "Memory after npm install:"
-          free -h
+          npm ci
+          cd spec/dummy && npm ci
 
-      - name: Install spec/internal dependencies
+      - name: Run system specs
+        env:
+          NODE_ENV: test
         run: |
-          echo "=== Installing spec/internal dependencies ==="
-          cd spec/internal
-          npm install
-          echo "Memory after spec/internal npm install:"
-          free -h
+          set -euo pipefail
 
-      - name: Start SSR Server
-        run: |
-          echo "=== Starting SSR Server ==="
-          echo "Memory before starting SSR:"
-          free -h
-          RV_SSR_PORT=5175 PROJECT_ROOT=$PWD/spec/internal node node/ssr/server.mjs &
+          # Start SSR server
+          node node/ssr/server.mjs &
           SSR_PID=$!
-          echo "SSR_PID=$SSR_PID" >> $GITHUB_ENV
-          echo "SSR server started with PID: $SSR_PID"
+          echo "SSR server started with PID ${SSR_PID}"
 
-          # Wait for SSR server to be ready with proper verification
-          SSR_READY=false
-          for i in {1..30}; do
-            if curl -s -f http://localhost:5175/ > /dev/null 2>&1; then
-              echo "SSR server is ready (attempt $i)"
-              SSR_READY=true
-              break
-            fi
-            echo "Waiting for SSR server... ($i/30)"
-            sleep 1
-          done
-
-          if [ "$SSR_READY" != "true" ]; then
-            echo "ERROR: SSR server failed to start"
-            ps aux | grep -E "(node|ssr)" | grep -v grep || true
-            exit 1
-          fi
-
-          echo "Memory after SSR server started:"
-          free -h
-          ps aux | grep -E "(node|ssr)" | grep -v grep || true
-
-      - name: Start Vite Dev Server
-        run: |
-          echo "=== Starting Vite Dev Server ==="
-          echo "Memory before starting Vite:"
-          free -h
-          cd spec/internal
-          RV_VITE_PORT=5174 npx vite --config vite.test.config.ts &
+          # Start Vite dev server inside dummy app
+          pushd spec/dummy >/dev/null
+          npx vite --config vite.test.config.ts &
           VITE_PID=$!
-          echo "VITE_PID=$VITE_PID" >> $GITHUB_ENV
-          echo "Vite server started with PID: $VITE_PID"
+          echo "Vite server started with PID ${VITE_PID}"
+          popd >/dev/null
 
-          # Wait for Vite to be ready with proper verification
-          VITE_READY=false
-          for i in {1..30}; do
-            if curl -s -f http://localhost:5174/ > /dev/null 2>&1; then
-              echo "Vite server is ready (attempt $i)"
-              VITE_READY=true
-              break
-            fi
-            echo "Waiting for Vite... ($i/30)"
-            sleep 1
-          done
+          cleanup() {
+            echo "Stopping background servers..."
+            kill ${SSR_PID} ${VITE_PID} || true
+          }
+          trap cleanup EXIT
 
-          if [ "$VITE_READY" != "true" ]; then
-            echo "ERROR: Vite server failed to start"
-            ps aux | grep -E "(vite|node)" | grep -v grep || true
-            exit 1
-          fi
-
-          echo "Memory after Vite server started:"
-          free -h
-          ps aux | grep -E "(vite|node)" | grep -v grep || true
-
-      - name: Verify servers before tests
-        run: |
-          echo "=== Verifying servers are ready ==="
-          echo "Checking Vite server (http://localhost:5174)..."
-          if ! curl -s -f http://localhost:5174/ > /dev/null 2>&1; then
-            echo "ERROR: Vite server is not accessible"
-            ps aux | grep -E "(vite|node)" | grep -v grep || true
-            exit 1
-          fi
-          echo "Vite server is accessible ✓"
-
-          echo "Checking SSR server (http://localhost:5175)..."
-          if ! curl -s -f http://localhost:5175/ > /dev/null 2>&1; then
-            echo "ERROR: SSR server is not accessible"
-            ps aux | grep -E "(node|ssr)" | grep -v grep || true
-            exit 1
-          fi
-          echo "SSR server is accessible ✓"
-          echo "Both servers verified and ready for tests"
-
-      - name: Run tests
-        timeout-minutes: 30
-        run: |
-          echo "=== Running Tests ==="
-          echo "Memory before tests:"
-          free -h
-          echo "Active processes:"
-          ps aux | head -20
-          echo "Chrome/Selenium processes before tests:"
-          ps aux | grep -E "(chrome|chromedriver|selenium)" | grep -v grep || echo "None found"
-          echo ""
-          echo "Starting RSpec with verbose output and progress monitoring..."
-
-          # Function to monitor resources in background
-          monitor_resources() {
-            while true; do
-              sleep 5
-              echo ""
-              echo "--- [$(date +%H:%M:%S)] Resource Check ---"
-              echo "Memory:"
-              free -h | grep Mem
-              echo "Top memory consumers:"
-              ps aux --sort=-%mem | head -5 | tail -4
-              echo "Chrome processes:"
-              ps aux | grep -E "(chrome|chromedriver)" | grep -v grep | wc -l | xargs echo "  Count:"
+          wait_for() {
+            local url="$1"
+            echo "Waiting for ${url}..."
+            for attempt in $(seq 1 60); do
+              if curl -fsS "${url}" >/dev/null 2>&1; then
+                echo "${url} is ready"
+                return 0
+              fi
+              sleep 1
             done
+            echo "Timed out waiting for ${url}" >&2
+            exit 1
           }
 
-          # Start resource monitoring in background
-          monitor_resources &
-          MONITOR_PID=$!
+          wait_for "http://localhost:${RV_SSR_PORT}/health"
+          wait_for "http://localhost:${RV_VITE_PORT}"
 
-          # Trap to kill monitor on exit
-          trap "kill $MONITOR_PID 2>/dev/null || true" EXIT
-
-          # Run tests with explicit timeout per example
-          bundle exec rspec \
-            --format documentation \
-            --color \
-            --format progress \
-            --order random \
-            --seed $RANDOM || TEST_EXIT=$?
-
-          # Kill monitor
-          kill $MONITOR_PID 2>/dev/null || true
-          wait $MONITOR_PID 2>/dev/null || true
-
-          echo ""
-          echo "=== Final resource check ==="
-          free -h
-          echo "Chrome processes after tests:"
-          ps aux | grep -E "(chrome|chromedriver)" | grep -v grep || echo "None found"
-
-          # Exit with test result
-          exit ${TEST_EXIT:-0}
-        env:
-          RAILS_ENV: test
-          RV_SSR_URL: http://localhost:5175
-          # Add explicit timeouts for Capybara
-          CAPYBARA_TIMEOUT: 10
-        continue-on-error: false
-
-      - name: Memory stats after tests
-        if: always()
-        run: |
-          echo "=== Memory after tests ==="
-          free -h
-          echo "Top memory consumers:"
-          ps aux --sort=-%mem | head -10
-
-      - name: Stop servers
-        if: always()
-        run: |
-          echo "=== Stopping servers ==="
-          if [ ! -z "$VITE_PID" ]; then
-            echo "Stopping Vite (PID: $VITE_PID)"
-            kill $VITE_PID || true
-            sleep 2
-            kill -9 $VITE_PID 2>/dev/null || true
-          fi
-          if [ ! -z "$SSR_PID" ]; then
-            echo "Stopping SSR (PID: $SSR_PID)"
-            kill $SSR_PID || true
-            sleep 2
-            kill -9 $SSR_PID 2>/dev/null || true
-          fi
-          # Clean up any remaining node processes
-          pkill -f "vite.*test.config" || true
-          pkill -f "node.*ssr/server" || true
-          echo "Final memory:"
-          free -h
-
-      - name: Upload coverage reports
-        uses: codecov/codecov-action@v4
-        if: matrix.ruby-version == '3.3'
-        with:
-          fail_ci_if_error: false
+          bundle exec rspec spec/system

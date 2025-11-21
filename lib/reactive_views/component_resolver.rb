@@ -10,7 +10,7 @@ module ReactiveViews
 
       # Normalize paths to absolute paths
       search_paths = paths.map do |path|
-        if path.is_a?(Pathname) || path.start_with?('/')
+        if path.is_a?(Pathname) || path.start_with?("/")
           path.to_s
         elsif defined?(Rails)
           Rails.root.join(path).to_s
@@ -22,35 +22,40 @@ module ReactiveViews
       # Generate all naming convention variants
       name_variants = generate_name_variants(component_name)
 
-      # Track searched locations for error reporting
-      searched_locations = []
-
       # Search for component in all paths with all naming variants
       search_paths.each do |base_path|
-        unless Dir.exist?(base_path)
-          searched_locations << "#{base_path} (directory not found)"
-          next
-        end
+        next unless Dir.exist?(base_path)
 
         # Try each naming variant
         name_variants.each do |variant|
           # Try each extension
           EXTENSIONS.each do |ext|
-            # Search recursively
-            pattern = File.join(base_path, '**', "#{variant}#{ext}")
-            matches = Dir.glob(pattern)
+            # Check for direct file match: base_path/Component.tsx
+            direct_path = File.join(base_path, "#{variant}#{ext}")
+            if (matched = match_file(direct_path))
+              log_resolution_success(component_name, matched, variant)
+              return matched
+            end
 
+            # Check for index file match: base_path/Component/index.tsx
+            index_path = File.join(base_path, variant, "index#{ext}")
+            if (matched = match_file(index_path))
+              log_resolution_success(component_name, matched, variant)
+              return matched
+            end
+
+            # Check for recursive match: base_path/**/Component.tsx
+            # Use glob for recursive search but be careful about performance
+            matches = Dir.glob(File.join(base_path, "**", "#{variant}#{ext}"), File::FNM_CASEFOLD)
             if matches.any?
               log_resolution_success(component_name, matches.first, variant)
               return matches.first
             end
-
-            searched_locations << pattern
           end
         end
       end
 
-      log_resolution_failure(component_name, searched_locations)
+      log_resolution_failure(component_name)
       nil
     end
 
@@ -81,7 +86,7 @@ module ReactiveViews
       name
         .gsub(/([A-Z]+)([A-Z][a-z])/, '\1_\2')
         .gsub(/([a-z\d])([A-Z])/, '\1_\2')
-        .tr('-', '_')
+        .tr("-", "_")
         .downcase
     end
 
@@ -99,25 +104,25 @@ module ReactiveViews
       name
         .gsub(/([A-Z]+)([A-Z][a-z])/, '\1-\2')
         .gsub(/([a-z\d])([A-Z])/, '\1-\2')
-        .tr('_', '-')
+        .tr("_", "-")
         .downcase
     end
 
     def self.log_resolution_success(component_name, path, variant)
       return unless defined?(Rails) && Rails.logger
 
-      variant_info = variant != component_name ? " (as '#{variant}')" : ''
+      variant_info = variant != component_name ? " (as '#{variant}')" : ""
       Rails.logger.debug("[ReactiveViews] Resolved #{component_name}#{variant_info} to #{path}")
     end
 
-    def self.log_resolution_failure(component_name, searched_locations)
+    def self.log_resolution_failure(component_name)
       return unless defined?(Rails) && Rails.logger
 
-      Rails.logger.error("[ReactiveViews] Component '#{component_name}' not found")
-      Rails.logger.error('[ReactiveViews] Searched in:')
-      searched_locations.each do |location|
-        Rails.logger.error("  - #{location}")
-      end
+      Rails.logger.error("[ReactiveViews] Component '#{component_name}' not found in search paths.")
+    end
+
+    def self.match_file(path)
+      Dir.glob(path, File::FNM_CASEFOLD).find { |matched| File.file?(matched) }
     end
   end
 end

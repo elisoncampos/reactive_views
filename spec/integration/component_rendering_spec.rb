@@ -29,7 +29,7 @@ RSpec.describe 'Component Rendering Integration', type: :request do
         stub_request(:post, 'http://localhost:5175/batch-render')
           .to_return(
             status: 200,
-            body: { results: [{ html: "<div class='ssr-rendered'>SSR Content</div>" }] }.to_json
+            body: { results: [ { html: "<div class='ssr-rendered'>SSR Content</div>" } ] }.to_json
           )
 
         get '/with_component'
@@ -46,7 +46,7 @@ RSpec.describe 'Component Rendering Integration', type: :request do
         stub_request(:post, 'http://localhost:5175/batch-render')
           .to_return(
             status: 200,
-            body: { results: [{ html: '<div>SSR Content</div>' }] }.to_json
+            body: { results: [ { html: '<div>SSR Content</div>' } ] }.to_json
           )
 
         get '/with_component'
@@ -62,7 +62,7 @@ RSpec.describe 'Component Rendering Integration', type: :request do
         stub_request(:post, 'http://localhost:5175/batch-render')
           .to_return(
             status: 200,
-            body: { results: [{ html: '<div>SSR Content</div>' }] }.to_json
+            body: { results: [ { html: '<div>SSR Content</div>' } ] }.to_json
           )
 
         get '/with_component'
@@ -114,7 +114,7 @@ RSpec.describe 'Component Rendering Integration', type: :request do
       stub_request(:post, 'http://localhost:5175/batch-render')
         .to_return(
           status: 200,
-          body: { results: [{ error: 'Render error' }] }.to_json
+          body: { results: [ { error: 'Render error' } ] }.to_json
         )
     end
 
@@ -158,7 +158,7 @@ RSpec.describe 'Component Rendering Integration', type: :request do
         stub_request(:post, 'http://localhost:5175/batch-render')
           .to_return(
             status: 200,
-            body: { results: [{ error: 'Component threw error' }] }.to_json
+            body: { results: [ { error: 'Component threw error' } ] }.to_json
           )
       end
 
@@ -176,8 +176,8 @@ RSpec.describe 'Component Rendering Integration', type: :request do
       get '/'
 
       expect(response).to have_http_status(:ok)
-      # The dummy controller uses a layout, should include HTML structure
-      expect(response.body).to include('Hello World')
+      expect(response.body).to include('@vite/client')
+      expect(response.body).to include('app/javascript/boot.tsx')
     end
   end
 end

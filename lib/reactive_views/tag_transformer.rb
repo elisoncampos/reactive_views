@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
-require 'nokogiri'
-require 'securerandom'
-require 'json'
+require "nokogiri"
+require "securerandom"
+require "json"
 
 module ReactiveViews
   class TagTransformer
@@ -37,11 +37,11 @@ module ReactiveViews
         tree_transform_components(tree_result[:nodes], component_name_map, context)
       elsif ReactiveViews.config.batch_rendering_enabled
         # Use batch rendering for flat layouts
-        component_nodes = find_component_nodes(doc)
+        component_nodes = find_component_nodes(doc, component_name_map)
         batch_transform_components(component_nodes, component_name_map, context)
       else
         # Fall back to individual rendering
-        component_nodes = find_component_nodes(doc)
+        component_nodes = find_component_nodes(doc, component_name_map)
         component_nodes.each do |node|
           transform_component_node(node, component_name_map, context)
         end
@@ -65,8 +65,8 @@ module ReactiveViews
       scripts_html = scripts.join("\n")
 
       # Try to inject before </body>
-      if html.include?('</body>')
-        html.sub('</body>', "#{scripts_html}\n</body>")
+      if html.include?("</body>")
+        html.sub("</body>", "#{scripts_html}\n</body>")
       else
         # No body tag, append at end
         "#{html}\n#{scripts_html}"
@@ -190,11 +190,11 @@ module ReactiveViews
         # Handle both old format (string) and new format (hash with :name and :attrs)
         component_name = if component_info.is_a?(Hash) && component_info[:name]
                            component_info[:name]
-                         elsif component_info.is_a?(String)
+        elsif component_info.is_a?(String)
                            component_info
-                         else
+        else
                            to_pascal_case(node.name)
-                         end
+        end
 
         uuid = SecureRandom.uuid
         props = extract_props(node, component_info.is_a?(Hash) ? component_info : nil)
@@ -242,31 +242,13 @@ module ReactiveViews
       end
     end
 
-    private_class_method def self.find_component_nodes(doc)
-      # Nokogiri HTML5 lowercases all tag names, so we need to find custom elements
-      # that don't match standard HTML tags. We look for tags that:
-      # 1. Contain lowercase letters (Nokogiri normalized from PascalCase)
-      # 2. Are not standard HTML elements
-      # 3. Don't start with "reactive_views_" (our internal markers)
+    private_class_method def self.find_component_nodes(doc, component_name_map)
+      return Nokogiri::XML::NodeSet.new(doc) if component_name_map.nil? || component_name_map.empty?
 
-      standard_html_tags = %w[
-        a abbr address area article aside audio b base bdi bdo blockquote body br
-        button canvas caption cite code col colgroup data datalist dd del details
-        dfn dialog div dl dt em embed fieldset figcaption figure footer form h1 h2
-        h3 h4 h5 h6 head header hgroup hr html i iframe img input ins kbd label
-        legend li link main map mark meta meter nav noscript object ol optgroup
-        option output p param picture pre progress q rp rt ruby s samp script
-        section select small source span strong style sub summary sup table tbody
-        td template textarea tfoot th thead time title tr track u ul var video wbr
-      ]
+      doc.css("*").select do |node|
+        next false if node.name.downcase.start_with?("reactive_views_")
 
-      doc.css('*').select do |node|
-        # Skip if it's a standard HTML tag or our internal marker
-        next false if standard_html_tags.include?(node.name.downcase)
-        next false if node.name.downcase.start_with?('reactive_views_')
-
-        # It's a custom element - likely a React component
-        true
+        component_name_map.key?(node.name.downcase)
       end
     end
 
@@ -274,7 +256,7 @@ module ReactiveViews
     # Returns: { nodes: [tree_node, ...], has_nesting: bool }
     # tree_node: { node:, component_name:, props:, children: [...], html_children: [...] }
     private_class_method def self.build_component_tree(doc, component_name_map)
-      all_component_nodes = find_component_nodes(doc)
+      all_component_nodes = find_component_nodes(doc, component_name_map)
       return { nodes: [], has_nesting: false } if all_component_nodes.empty?
 
       # Find root components (not nested inside other components)
@@ -315,11 +297,11 @@ module ReactiveViews
       # Handle both old format (string) and new format (hash with :name and :attrs)
       component_name = if component_info.is_a?(Hash) && component_info[:name]
                          component_info[:name]
-                       elsif component_info.is_a?(String)
+      elsif component_info.is_a?(String)
                          component_info
-                       else
+      else
                          to_pascal_case(node.name)
-                       end
+      end
 
       props = extract_props(node, component_info.is_a?(Hash) ? component_info : nil)
 
@@ -354,11 +336,11 @@ module ReactiveViews
       # Handle both old format (string) and new format (hash with :name and :attrs)
       component_name = if component_info.is_a?(Hash) && component_info[:name]
                          component_info[:name]
-                       elsif component_info.is_a?(String)
+      elsif component_info.is_a?(String)
                          component_info
-                       else
+      else
                          to_pascal_case(node.name)
-                       end
+      end
 
       uuid = SecureRandom.uuid
 
@@ -369,7 +351,7 @@ module ReactiveViews
       ssr_html = ReactiveViews::Renderer.render(component_name, props)
 
       # Check for error marker
-      if ssr_html.start_with?('___REACTIVE_VIEWS_ERROR___')
+      if ssr_html.start_with?("___REACTIVE_VIEWS_ERROR___")
         handle_ssr_error(node, component_name, props, ssr_html)
         return
       end
@@ -387,12 +369,12 @@ module ReactiveViews
         # Restore original attribute name case if we have component_info
         original_name = if component_info && component_info[:attrs] && component_info[:attrs][name]
                           component_info[:attrs][name]
-                        else
+        else
                           name
-                        end
+        end
 
         # Try to parse as JSON if it looks like JSON
-        if value.start_with?('{', '[') || value == 'true' || value == 'false' || value =~ /^\d+$/
+        if value.start_with?("{", "[") || value == "true" || value == "false" || value =~ /^\d+$/
           begin
             props[original_name] = JSON.parse(value)
           rescue JSON::ParserError
@@ -408,18 +390,18 @@ module ReactiveViews
 
     private_class_method def self.create_island(node, component_name, uuid, props, ssr_html, context = nil)
       # Create container div
-      container = Nokogiri::XML::Node.new('div', node.document)
-      container['data-island-uuid'] = uuid
-      container['data-component'] = component_name
+      container = Nokogiri::XML::Node.new("div", node.document)
+      container["data-island-uuid"] = uuid
+      container["data-component"] = component_name
 
       # Add SSR'd HTML as inner content
       container.inner_html = ssr_html
 
       # Only create props script tag if there are actual props
       if props && !props.empty?
-        script = Nokogiri::XML::Node.new('script', node.document)
-        script['type'] = 'application/json'
-        script['data-island-uuid'] = uuid
+        script = Nokogiri::XML::Node.new("script", node.document)
+        script["type"] = "application/json"
+        script["data-island-uuid"] = uuid
         script.content = props.to_json
 
         # Collect script for later injection if context is provided
@@ -437,7 +419,7 @@ module ReactiveViews
 
     private_class_method def self.handle_ssr_error(node, component_name, props, error_html)
       # Extract error from marker
-      error_message = error_html.sub('___REACTIVE_VIEWS_ERROR___', '').sub('___', '')
+      error_message = error_html.sub("___REACTIVE_VIEWS_ERROR___", "").sub("___", "")
 
       if defined?(Rails) && Rails.env.development?
         # Show error overlay in development
@@ -447,15 +429,15 @@ module ReactiveViews
           error: error_message
         )
 
-        error_div = Nokogiri::XML::Node.new('div', node.document)
+        error_div = Nokogiri::XML::Node.new("div", node.document)
         error_div.inner_html = error_content
         node.replace(error_div)
       else
         # In production, render empty div with minimal error info
-        fallback = Nokogiri::XML::Node.new('div', node.document)
-        fallback['data-reactive-views-error'] = 'true'
-        fallback['data-component'] = component_name
-        fallback['style'] = 'display: none;'
+        fallback = Nokogiri::XML::Node.new("div", node.document)
+        fallback["data-reactive-views-error"] = "true"
+        fallback["data-component"] = component_name
+        fallback["style"] = "display: none;"
         fallback.content = "<!-- Component #{component_name} failed to render -->"
         node.replace(fallback)
       end

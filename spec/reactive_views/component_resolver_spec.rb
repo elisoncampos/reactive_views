@@ -8,7 +8,7 @@ RSpec.describe ReactiveViews::ComponentResolver do
 
   before do
     ReactiveViews.configure do |config|
-      config.component_views_paths = [test_dir]
+      config.component_views_paths = [ test_dir ]
       config.component_js_paths = []
     end
 
@@ -75,8 +75,8 @@ RSpec.describe ReactiveViews::ComponentResolver do
       before do
         FileUtils.mkdir_p(other_dir)
         ReactiveViews.configure do |config|
-          config.component_views_paths = [test_dir]
-          config.component_js_paths = [other_dir]
+          config.component_views_paths = [ test_dir ]
+          config.component_js_paths = [ other_dir ]
         end
       end
 
@@ -107,7 +107,7 @@ RSpec.describe ReactiveViews::ComponentResolver do
       before do
         FileUtils.mkdir_p(sub_dir)
         ReactiveViews.configure do |config|
-          config.component_views_paths = [test_dir]
+          config.component_views_paths = [ test_dir ]
           config.component_js_paths = []
         end
       end
@@ -124,7 +124,7 @@ RSpec.describe ReactiveViews::ComponentResolver do
     context 'with different naming conventions' do
       before do
         ReactiveViews.configure do |config|
-          config.component_views_paths = [test_dir]
+          config.component_views_paths = [ test_dir ]
           config.component_js_paths = []
         end
       end

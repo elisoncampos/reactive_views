@@ -17,13 +17,18 @@ RSpec.describe 'Full-page TSX.ERB rendering', type: :request do
       config.full_page_enabled = true
       config.enabled = true
       config.props_inference_enabled = true
+      config.ssr_url = 'http://localhost:5175'
     end
 
     stub_const('UsersController', Class.new(ActionController::Base) do
       include ReactiveViewsHelper
+      # Explicitly set view_paths to the dummy app's view path
+      # This ensures lookups happen in the correct place even if the controller is dynamically defined
+      prepend_view_path Rails.root.join('app', 'views')
 
       def index
-        @users = [{ id: 1, name: 'Alice' }, { id: 2, name: 'Bob' }]
+        @users = [ { id: 1, name: 'Alice' }, { id: 2, name: 'Bob' } ]
+        @page_title = 'All Users'
         reactive_view_props(current_user: { name: 'Admin User' })
         render :index
       end
@@ -58,16 +63,6 @@ RSpec.describe 'Full-page TSX.ERB rendering', type: :request do
         }
       TSX
 
-      # Stub props inference
-      stub_request(:post, 'http://localhost:5175/infer-props')
-        .to_return(status: 200, body: { keys: ['users'] }.to_json)
-
-      # Stub SSR response
-      stub_request(:post, 'http://localhost:5175/render')
-        .to_return(status: 200, body: {
-          html: '<main><h1>Users List</h1><ul><li>Alice</li><li>Bob</li></ul></main>'
-        }.to_json)
-
       get '/users'
 
       expect(response).to have_http_status(:ok)
@@ -88,24 +83,20 @@ RSpec.describe 'Full-page TSX.ERB rendering', type: :request do
         }
       TSX
 
-      # Stub props inference
-      stub_request(:post, 'http://localhost:5175/infer-props')
-        .to_return(status: 200, body: { keys: %w[users page_title] }.to_json)
-
-      # Capture the props sent to SSR
-      received_props = nil
-      stub_request(:post, 'http://localhost:5175/render')
-        .to_return do |request|
-          body = JSON.parse(request.body)
-          received_props = body['props']
-          { status: 200, body: { html: '<div>Rendered</div>' }.to_json }
-        end
+      captured_props = nil
+      allow(ReactiveViews::Renderer).to receive(:render_path).and_wrap_original do |method, path, props|
+        captured_props = props
+        method.call(path, props)
+      end
 
       get '/users'
 
-      expect(received_props).to include('users')
-      expect(received_props['users']).to be_an(Array)
-      expect(received_props['users'].length).to eq(2)
+      expect(response).to have_http_status(:ok)
+      normalized = response.body.gsub('<!-- -->', '')
+      expect(normalized).to include('All Users')
+      expect(normalized).to include('Count: 2')
+      expect(captured_props).to include(:users)
+      expect(captured_props[:users].length).to eq(2)
     end
   end
 
@@ -142,22 +133,18 @@ RSpec.describe 'Full-page TSX.ERB rendering', type: :request do
         }
       TSX
 
-      # Stub props inference
-      stub_request(:post, 'http://localhost:5175/infer-props')
-        .to_return(status: 200, body: { keys: %w[users current_user] }.to_json)
-
-      received_props = nil
-      stub_request(:post, 'http://localhost:5175/render')
-        .to_return do |request|
-          body = JSON.parse(request.body)
-          received_props = body['props']
-          { status: 200, body: { html: '<div>Rendered</div>' }.to_json }
-        end
+      captured_props = nil
+      allow(ReactiveViews::Renderer).to receive(:render_path).and_wrap_original do |method, path, props|
+        captured_props = props
+        method.call(path, props)
+      end
 
       get '/users'
 
-      expect(received_props).to include('users', 'current_user')
-      expect(received_props['current_user']).to include('name' => 'Admin User')
+      normalized = response.body.gsub('<!-- -->', '')
+      expect(normalized).to include('Welcome, Admin User')
+      expect(captured_props).to include(:users, :current_user)
+      expect(captured_props[:current_user]).to include(name: 'Admin User')
     end
   end
 
@@ -170,6 +157,7 @@ RSpec.describe 'Full-page TSX.ERB rendering', type: :request do
       File.write(users_views.join('index.tsx.erb'), 'export default function() { return <div>Test</div>; }')
 
       # When full_page_enabled is false, the MissingTemplate exception is re-raised
+      # (Because render override won't add :tsx/:jsx to formats)
       expect { get '/users' }.to raise_error(ActionView::MissingTemplate)
     end
   end

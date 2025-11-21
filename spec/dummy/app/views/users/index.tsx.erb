@@ -1,0 +1,15 @@
+<%= render "users/filters" %>
+
+export default function UsersPage({ users }: { users: Array<{ id: number; name: string }> }) {
+  return (
+    <main>
+      <h1>Users List</h1>
+      <UsersFilters />
+      <ul>
+        {users.map(user => (
+          <li key={user.id}>{user.name}</li>
+        ))}
+      </ul>
+    </main>
+  );
+}

@@ -80,7 +80,7 @@ RSpec.describe ReactiveViews::Generators::InstallGenerator, type: :generator do
       second_run = File.read(layout_path)
 
       # Should have exactly one reactive_views_script_tag
-      expect(second_run.scan(/reactive_views_script_tag/).count).to eq(1)
+      expect(second_run.scan('reactive_views_script_tag').count).to eq(1)
       expect(first_run).to eq(second_run)
     end
 

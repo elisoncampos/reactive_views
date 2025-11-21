@@ -5,14 +5,11 @@
 /doc/
 /pkg/
 /spec/reports/
-/spec/dummy/
-# Ignore build artifacts in spec/internal, but track essential test files
-/spec/internal/node_modules/
-/spec/internal/dist/
-/spec/internal/tmp/
-/spec/internal/log/*.log
-/spec/internal/Users/
-# Ignore vendor/bundle (bundler install path - 146MB of installed gems)
+/spec/dummy/log/
+/spec/dummy/tmp/
+/spec/dummy/node_modules/
+/spec/dummy/vendor/
+
 /vendor/bundle/
 /tmp/
 *.gem
