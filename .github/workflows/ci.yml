@@ -71,7 +71,7 @@ jobs:
           }
 
           wait_for "http://localhost:${RV_SSR_PORT}/health"
-          wait_for "http://localhost:${RV_VITE_PORT}"
+          wait_for "http://localhost:${RV_VITE_PORT}/@vite/client"
 
           bundle exec rspec --tag ~type:system
 
@@ -144,6 +144,6 @@ jobs:
           }
 
           wait_for "http://localhost:${RV_SSR_PORT}/health"
-          wait_for "http://localhost:${RV_VITE_PORT}"
+          wait_for "http://localhost:${RV_VITE_PORT}/@vite/client"
 
           bundle exec rspec spec/system
