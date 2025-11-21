@@ -25,6 +25,8 @@ jobs:
         working-directory: .
         run: |
           if ! git ls-remote --exit-code origin gh-pages >/dev/null 2>&1; then
+            git config user.name "${{ github.actor }}"
+            git config user.email "${{ github.actor }}@users.noreply.github.com"
             git checkout --orphan gh-pages
             git reset --hard
             touch .gh-pages-placeholder
