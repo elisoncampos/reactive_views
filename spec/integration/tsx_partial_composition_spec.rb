@@ -85,9 +85,17 @@ RSpec.describe 'TSX ERB partial composition', type: :request do
       TSX
 
       rendered_source = nil
-      allow(ReactiveViews::Renderer).to receive(:render_path).and_wrap_original do |method, path, props|
-        rendered_source = File.read(path)
-        method.call(path, props)
+
+      if ENV['REACTIVE_VIEWS_SKIP_SERVERS'] == '1'
+        allow(ReactiveViews::Renderer).to receive(:render_path) do |path, _props|
+          rendered_source = File.read(path)
+          '<main><h1>Users List</h1><section id="filters">Filters Section</section></main>'
+        end
+      else
+        allow(ReactiveViews::Renderer).to receive(:render_path).and_wrap_original do |method, path, props|
+          rendered_source = File.read(path)
+          method.call(path, props)
+        end
       end
 
       get '/users'
@@ -129,9 +137,25 @@ RSpec.describe 'TSX ERB partial composition', type: :request do
       TSX
 
       captured_props = nil
-      allow(ReactiveViews::Renderer).to receive(:render_path).and_wrap_original do |method, path, props|
-        captured_props = props
-        method.call(path, props)
+
+      if ENV['REACTIVE_VIEWS_SKIP_SERVERS'] == '1'
+        allow(ReactiveViews::Renderer).to receive(:render_path) do |_path, props|
+          captured_props = props
+          <<~HTML
+            <main>
+              <h1>User Profile</h1>
+              <div class="user-profile">
+                <h2>Alice</h2>
+                <p>Software Developer</p>
+              </div>
+            </main>
+          HTML
+        end
+      else
+        allow(ReactiveViews::Renderer).to receive(:render_path).and_wrap_original do |method, path, props|
+          captured_props = props
+          method.call(path, props)
+        end
       end
 
       get '/users/1'

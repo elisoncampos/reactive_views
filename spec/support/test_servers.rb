@@ -12,6 +12,8 @@ module TestServers
     attr_reader :vite_pid, :ssr_pid
 
     def start
+      return if ENV['REACTIVE_VIEWS_SKIP_SERVERS'] == '1'
+
       if ENV['CI']
         wait_for_server("http://localhost:#{VITE_PORT}")
         wait_for_server("http://localhost:#{SSR_PORT}")
@@ -54,7 +56,7 @@ module TestServers
     end
 
     def stop
-      return if ENV['CI']
+      return if ENV['CI'] || ENV['REACTIVE_VIEWS_SKIP_SERVERS'] == '1'
 
       puts 'Stopping test servers...'
       Process.kill('TERM', @vite_pid) if @vite_pid
