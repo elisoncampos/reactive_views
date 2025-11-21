@@ -9,6 +9,8 @@ import { createRequire } from "module";
 // Configuration from environment
 const PORT = parseInt(process.env.RV_SSR_PORT || "5175", 10);
 const VITE_PORT = parseInt(process.env.RV_VITE_PORT || "5174", 10);
+const NODE_ENV = process.env.NODE_ENV || "development";
+const IS_DEV = NODE_ENV === "development";
 
 // Determine project root (when run via rake task, cwd should be the Rails app)
 const PROJECT_ROOT = process.cwd();
@@ -26,265 +28,358 @@ console.log(`[ReactiveViews SSR] Starting server...`);
 console.log(`[ReactiveViews SSR] Project root: ${PROJECT_ROOT}`);
 console.log(`[ReactiveViews SSR] Port: ${PORT}`);
 
-// Props inference cache (keyed by content hash)
-const propsInferenceCache = new Map();
+const PropsInference = (() => {
+  const cache = new Map();
+  let cachedTypeScript = null;
+  let typescriptMissing = false;
 
-// Lazy-load TypeScript compiler for props inference
-let cachedTypeScript = null;
-let typescriptMissing = false;
+  function loadTypeScript() {
+    if (cachedTypeScript) {
+      return cachedTypeScript;
+    }
 
-function loadTypeScript() {
-  if (cachedTypeScript) {
-    return cachedTypeScript;
-  }
-
-  if (typescriptMissing) {
-    return null;
-  }
-
-  try {
-    cachedTypeScript = projectRequire("typescript");
-    return cachedTypeScript;
-  } catch (error) {
-    if (error.code === "MODULE_NOT_FOUND") {
-      typescriptMissing = true;
-      console.warn(
-        "[ReactiveViews SSR] TypeScript not found in the host app. " +
-          "Props inference will be skipped. Install it with `yarn add -D typescript` or disable props inference."
-      );
+    if (typescriptMissing) {
       return null;
     }
 
-    throw error;
-  }
-}
-
-/**
- * Infer prop keys from TSX/JSX component signature
- * Supports: export default function Component({ a, b }: Props) {}
- * Supports: const Component = ({ a, b }: Props) => {}; export default Component
- */
-function inferProps(content, contentHash, extension = 'tsx') {
-  // Check cache first
-  if (propsInferenceCache.has(contentHash)) {
-    console.log(`[ReactiveViews SSR] Props inference cache hit for ${contentHash}`);
-    return propsInferenceCache.get(contentHash);
-  }
-
-  try {
-    const typescript = loadTypeScript();
-    if (!typescript) {
-      return [];
-    }
-    
-    // Determine script kind based on extension
-    const scriptKind = extension === 'jsx' 
-      ? typescript.ScriptKind.JSX 
-      : typescript.ScriptKind.TSX;
-
-    // Parse source
-    const sourceFile = typescript.createSourceFile(
-      `component.${extension}`,
-      content,
-      typescript.ScriptTarget.Latest,
-      true,
-      scriptKind
-    );
-
-    const keys = [];
-
-    // Find default export and extract prop destructuring
-    function visit(node) {
-      // Case 1: export default function Component({ a, b }: Props) {}
-      if (
-        typescript.isFunctionDeclaration(node) &&
-        node.modifiers?.some(
-          (m) => m.kind === typescript.SyntaxKind.ExportKeyword ||
-                 m.kind === typescript.SyntaxKind.DefaultKeyword
-        )
-      ) {
-        extractPropsFromFunction(node);
+    try {
+      cachedTypeScript = projectRequire("typescript");
+      return cachedTypeScript;
+    } catch (error) {
+      if (error.code === "MODULE_NOT_FOUND") {
+        typescriptMissing = true;
+        console.warn(
+          "[ReactiveViews SSR] TypeScript not found in the host app. " +
+            "Props inference will be skipped. Install it with `yarn add -D typescript` or disable props inference."
+        );
+        return null;
       }
 
-      // Case 2: export default Component (find Component declaration)
-      if (
-        typescript.isExportAssignment(node) &&
-        typescript.isIdentifier(node.expression)
-      ) {
-        const componentName = node.expression.text;
-        // Find the variable/function declaration
-        typescript.forEachChild(sourceFile, (child) => {
-          if (
-            typescript.isVariableStatement(child) &&
-            child.declarationList.declarations.some(
-              (d) => typescript.isIdentifier(d.name) && d.name.text === componentName
-            )
-          ) {
-            child.declarationList.declarations.forEach((decl) => {
-              if (
-                typescript.isIdentifier(decl.name) &&
-                decl.name.text === componentName &&
-                decl.initializer
-              ) {
-                if (typescript.isArrowFunction(decl.initializer)) {
-                  extractPropsFromArrowFunction(decl.initializer);
-                } else if (typescript.isFunctionExpression(decl.initializer)) {
-                  extractPropsFromFunction(decl.initializer);
+      throw error;
+    }
+  }
+
+  function infer(content, contentHash, extension = "tsx") {
+    if (contentHash && cache.has(contentHash)) {
+      return cache.get(contentHash);
+    }
+
+    try {
+      const typescript = loadTypeScript();
+      if (!typescript) {
+        return [];
+      }
+
+      const scriptKind =
+        extension === "jsx"
+          ? typescript.ScriptKind.JSX
+          : typescript.ScriptKind.TSX;
+
+      const sourceFile = typescript.createSourceFile(
+        `component.${extension}`,
+        content,
+        typescript.ScriptTarget.Latest,
+        true,
+        scriptKind
+      );
+
+      const keys = [];
+
+      function visit(node) {
+        if (
+          typescript.isFunctionDeclaration(node) &&
+          node.modifiers?.some(
+            (m) =>
+              m.kind === typescript.SyntaxKind.ExportKeyword ||
+              m.kind === typescript.SyntaxKind.DefaultKeyword
+          )
+        ) {
+          extractPropsFromFunction(node);
+        }
+
+        if (
+          typescript.isExportAssignment(node) &&
+          typescript.isIdentifier(node.expression)
+        ) {
+          const componentName = node.expression.text;
+          typescript.forEachChild(sourceFile, (child) => {
+            if (
+              typescript.isVariableStatement(child) &&
+              child.declarationList.declarations.some(
+                (d) =>
+                  typescript.isIdentifier(d.name) &&
+                  d.name.text === componentName
+              )
+            ) {
+              child.declarationList.declarations.forEach((decl) => {
+                if (
+                  typescript.isIdentifier(decl.name) &&
+                  decl.name.text === componentName &&
+                  decl.initializer
+                ) {
+                  if (typescript.isArrowFunction(decl.initializer)) {
+                    extractPropsFromArrowFunction(decl.initializer);
+                  } else if (
+                    typescript.isFunctionExpression(decl.initializer)
+                  ) {
+                    extractPropsFromFunction(decl.initializer);
+                  }
                 }
+              });
+            } else if (
+              typescript.isFunctionDeclaration(child) &&
+              typescript.isIdentifier(child.name) &&
+              child.name.text === componentName
+            ) {
+              extractPropsFromFunction(child);
+            }
+          });
+        }
+
+        typescript.forEachChild(node, visit);
+      }
+
+      function extractPropsFromFunction(node) {
+        if (node.parameters.length > 0) {
+          const firstParam = node.parameters[0];
+          if (typescript.isObjectBindingPattern(firstParam.name)) {
+            firstParam.name.elements.forEach((element) => {
+              if (
+                typescript.isBindingElement(element) &&
+                typescript.isIdentifier(element.name)
+              ) {
+                keys.push(element.name.text);
               }
             });
-          } else if (
-            typescript.isFunctionDeclaration(child) &&
-            typescript.isIdentifier(child.name) &&
-            child.name.text === componentName
-          ) {
-            extractPropsFromFunction(child);
           }
-        });
-      }
-
-      typescript.forEachChild(node, visit);
-    }
-
-    function extractPropsFromFunction(node) {
-      if (node.parameters.length > 0) {
-        const firstParam = node.parameters[0];
-        if (typescript.isObjectBindingPattern(firstParam.name)) {
-          firstParam.name.elements.forEach((element) => {
-            if (typescript.isBindingElement(element) && typescript.isIdentifier(element.name)) {
-              keys.push(element.name.text);
-            }
-          });
         }
       }
-    }
 
-    function extractPropsFromArrowFunction(node) {
-      if (node.parameters.length > 0) {
-        const firstParam = node.parameters[0];
-        if (typescript.isObjectBindingPattern(firstParam.name)) {
-          firstParam.name.elements.forEach((element) => {
-            if (typescript.isBindingElement(element) && typescript.isIdentifier(element.name)) {
-              keys.push(element.name.text);
-            }
-          });
+      function extractPropsFromArrowFunction(node) {
+        if (node.parameters.length > 0) {
+          const firstParam = node.parameters[0];
+          if (typescript.isObjectBindingPattern(firstParam.name)) {
+            firstParam.name.elements.forEach((element) => {
+              if (
+                typescript.isBindingElement(element) &&
+                typescript.isIdentifier(element.name)
+              ) {
+                keys.push(element.name.text);
+              }
+            });
+          }
         }
       }
+
+      visit(sourceFile);
+
+      console.log(`[ReactiveViews SSR] Inferred props: ${keys.join(", ")}`);
+
+      if (contentHash) {
+        cache.set(contentHash, keys);
+      }
+
+      return keys;
+    } catch (error) {
+      console.error("[ReactiveViews SSR] Props inference error:", error);
+      return [];
     }
-
-    visit(sourceFile);
-
-    console.log(`[ReactiveViews SSR] Inferred props: ${keys.join(", ")}`);
-    
-    // Cache the result
-    propsInferenceCache.set(contentHash, keys);
-    
-    return keys;
-  } catch (error) {
-    console.error(`[ReactiveViews SSR] Props inference error:`, error);
-    return [];
   }
-}
+
+  return { infer };
+})();
+
+const Bundler = (() => {
+  const cache = new Map();
+  const pending = new Map();
+  const MAX_ENTRIES = parseInt(process.env.RV_SSR_BUNDLE_CACHE || "20", 10);
+
+  function cacheKeyFor(componentPath) {
+    const stats = fs.statSync(componentPath);
+    return `${componentPath}:${stats.mtimeMs}:${NODE_ENV}`;
+  }
+
+  async function loadComponent(componentPath) {
+    const key = cacheKeyFor(componentPath);
+    const cached = cache.get(key);
+    if (cached) {
+      cached.lastUsed = Date.now();
+      return cached.component;
+    }
+
+    if (pending.has(key)) {
+      const bundle = await pending.get(key);
+      bundle.lastUsed = Date.now();
+      return bundle.component;
+    }
+
+    const buildPromise = bundleComponent(componentPath, key)
+      .then((bundle) => {
+        removeExistingEntries(componentPath, key);
+        cache.set(key, bundle);
+        pruneCache();
+        pending.delete(key);
+        return bundle;
+      })
+      .catch((error) => {
+        pending.delete(key);
+        throw error;
+      });
+
+    pending.set(key, buildPromise);
+    const bundle = await buildPromise;
+    return bundle.component;
+  }
+
+  async function bundleComponent(componentPath, cacheKey) {
+    const tempDir = join(PROJECT_ROOT, "tmp", "reactive_views_ssr");
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    const entryFile = join(
+      tempDir,
+      `entry_${Date.now()}_${Math.random().toString(36).slice(2)}.cjs`
+    );
+    const outFile = entryFile.replace(".cjs", ".out.cjs");
+
+    const normalizedPath = componentPath.replace(/\\/g, "/");
+    const entryContent = `
+const React = require('react');
+const Component = require('${normalizedPath}').default || require('${normalizedPath}');
+
+exports.default = Component;
+`;
+
+    fs.writeFileSync(entryFile, entryContent);
+
+    try {
+      await esbuild.build({
+        entryPoints: [entryFile],
+        bundle: true,
+        format: "cjs",
+        platform: "node",
+        outfile: outFile,
+        external: [
+          "react",
+          "react-dom",
+          "react/jsx-runtime",
+          "react/jsx-dev-runtime",
+        ],
+        jsx: "transform",
+        jsxFactory: "React.createElement",
+        jsxFragment: "React.Fragment",
+        loader: {
+          ".tsx": "tsx",
+          ".ts": "ts",
+          ".jsx": "jsx",
+          ".js": "jsx",
+        },
+        logLevel: "warning",
+      });
+
+      const React = projectRequire("react");
+      global.React = React;
+      delete projectRequire.cache[projectRequire.resolve(outFile)];
+      const Component = projectRequire(outFile).default;
+      delete global.React;
+
+      safeUnlink(entryFile);
+
+      return {
+        component: Component,
+        componentPath,
+        cacheKey,
+        bundlePath: outFile,
+        lastUsed: Date.now(),
+      };
+    } catch (error) {
+      safeUnlink(entryFile);
+      safeUnlink(outFile);
+      throw error;
+    }
+  }
+
+  function removeExistingEntries(componentPath, currentKey) {
+    for (const [key, entry] of cache.entries()) {
+      if (entry.componentPath === componentPath && key !== currentKey) {
+        cleanupBundle(entry);
+        cache.delete(key);
+      }
+    }
+  }
+
+  function pruneCache() {
+    if (cache.size <= MAX_ENTRIES) {
+      return;
+    }
+
+    while (cache.size > MAX_ENTRIES) {
+      let oldestKey = null;
+      let oldestTime = Infinity;
+
+      for (const [key, entry] of cache.entries()) {
+        if (entry.lastUsed < oldestTime) {
+          oldestKey = key;
+          oldestTime = entry.lastUsed;
+        }
+      }
+
+      if (oldestKey) {
+        const entry = cache.get(oldestKey);
+        cleanupBundle(entry);
+        cache.delete(oldestKey);
+      } else {
+        break;
+      }
+    }
+  }
+
+  function cleanupBundle(entry) {
+    if (entry?.bundlePath && fs.existsSync(entry.bundlePath)) {
+      safeUnlink(entry.bundlePath);
+    }
+  }
+
+  function safeUnlink(path) {
+    if (!path) return;
+    try {
+      if (fs.existsSync(path)) {
+        fs.unlinkSync(path);
+      }
+    } catch (error) {
+      // Ignore cleanup errors
+    }
+  }
+
+  function clear() {
+    for (const entry of cache.values()) {
+      cleanupBundle(entry);
+    }
+    cache.clear();
+  }
+
+  return { loadComponent, clear };
+})();
 
 // Render a component using React's server-side rendering
 async function renderComponent(componentPath, props) {
-  // Verify the component file exists
   if (!fs.existsSync(componentPath)) {
     throw new Error(`Component file not found: ${componentPath}`);
   }
 
   console.log(`[ReactiveViews SSR] Rendering component from ${componentPath}`);
 
-  // Create a temporary entry file that imports React and the component
-  const tempDir = join(PROJECT_ROOT, "tmp", "reactive_views_ssr");
-  if (!fs.existsSync(tempDir)) {
-    fs.mkdirSync(tempDir, { recursive: true });
-  }
+  const Component = await Bundler.loadComponent(componentPath);
+  const React = projectRequire("react");
+  const { renderToString } = projectRequire("react-dom/server");
 
-  const entryFile = join(
-    tempDir,
-    `entry_${Date.now()}_${Math.random().toString(36).slice(2)}.cjs`
-  );
-  const outFile = entryFile.replace(".cjs", ".out.cjs");
-
-  // Create entry file that imports React and the component
-  // React is marked external so it won't be bundled
-  const entryContent = `
-const React = require('react');
-const Component = require('${componentPath.replace(
-    /\\/g,
-    "/"
-  )}').default || require('${componentPath.replace(/\\/g, "/")}');
-
-exports.default = Component;
-`;
-
-  fs.writeFileSync(entryFile, entryContent);
-
+  global.React = React;
   try {
-    // Bundle the component with esbuild
-    // Keep React external and load it at runtime
-    await esbuild.build({
-      entryPoints: [entryFile],
-      bundle: true,
-      format: "cjs",
-      platform: "node",
-      outfile: outFile,
-      external: [
-        "react",
-        "react-dom",
-        "react/jsx-runtime",
-        "react/jsx-dev-runtime",
-      ],
-      jsx: "transform",
-      jsxFactory: "React.createElement",
-      jsxFragment: "React.Fragment",
-      loader: {
-        ".tsx": "tsx",
-        ".ts": "ts",
-        ".jsx": "jsx",
-        ".js": "jsx",
-      },
-      logLevel: "warning",
-    });
-
-    // Load React from the project
-    const React = projectRequire("react");
-    const { renderToString } = projectRequire("react-dom/server");
-
-    // Make React available globally for the bundled component
-    global.React = React;
-
-    // Clear cache and load the bundled component
-    delete projectRequire.cache[projectRequire.resolve(outFile)];
-    const Component = projectRequire(outFile).default;
-
     const element = React.createElement(Component, props);
-    const html = renderToString(element);
-
-    // Clean up global
+    return renderToString(element);
+  } finally {
     delete global.React;
-
-    // Cleanup
-    try {
-      fs.unlinkSync(entryFile);
-      fs.unlinkSync(outFile);
-    } catch (e) {
-      // Ignore cleanup errors
-    }
-
-    return html;
-  } catch (error) {
-    // Cleanup on error
-    try {
-      fs.unlinkSync(entryFile);
-      if (fs.existsSync(outFile)) {
-        fs.unlinkSync(outFile);
-      }
-    } catch (e) {
-      // Ignore cleanup errors
-    }
-    throw error;
   }
 }
 
@@ -325,7 +420,7 @@ async function buildReactTree(treeSpec, React) {
   console.log(`[ReactiveViews SSR] Building tree for ${componentPath}`);
 
   // Bundle and load the component
-  const Component = await loadComponent(componentPath);
+  const Component = await Bundler.loadComponent(componentPath);
 
   // Build child React elements in parallel (siblings render in parallel)
   const childElements = children?.length
@@ -351,317 +446,186 @@ async function buildReactTree(treeSpec, React) {
   return React.createElement(Component, props || {}, ...allChildren);
 }
 
-// Load and bundle a component, returning the Component function
-async function loadComponent(componentPath) {
-  const tempDir = join(PROJECT_ROOT, "tmp", "reactive_views_ssr");
-  if (!fs.existsSync(tempDir)) {
-    fs.mkdirSync(tempDir, { recursive: true });
-  }
-
-  const entryFile = join(
-    tempDir,
-    `entry_${Date.now()}_${Math.random().toString(36).slice(2)}.cjs`
-  );
-  const outFile = entryFile.replace(".cjs", ".out.cjs");
-
-  // Create entry file that imports React and the component
-  const entryContent = `
-const React = require('react');
-const Component = require('${componentPath.replace(
-    /\\/g,
-    "/"
-  )}').default || require('${componentPath.replace(/\\/g, "/")}');
-
-exports.default = Component;
-`;
-
-  fs.writeFileSync(entryFile, entryContent);
-
-  try {
-    // Bundle the component with esbuild
-    await esbuild.build({
-      entryPoints: [entryFile],
-      bundle: true,
-      format: "cjs",
-      platform: "node",
-      outfile: outFile,
-      external: [
-        "react",
-        "react-dom",
-        "react/jsx-runtime",
-        "react/jsx-dev-runtime",
-      ],
-      jsx: "transform",
-      jsxFactory: "React.createElement",
-      jsxFragment: "React.Fragment",
-      loader: {
-        ".tsx": "tsx",
-        ".ts": "ts",
-        ".jsx": "jsx",
-        ".js": "jsx",
-      },
-      logLevel: "warning",
-    });
-
-    // Clear cache and load the bundled component
-    delete projectRequire.cache[projectRequire.resolve(outFile)];
-    const Component = projectRequire(outFile).default;
-
-    // Cleanup
-    try {
-      fs.unlinkSync(entryFile);
-      fs.unlinkSync(outFile);
-    } catch (e) {
-      // Ignore cleanup errors
-    }
-
-    return Component;
-  } catch (error) {
-    // Cleanup on error
-    try {
-      fs.unlinkSync(entryFile);
-      if (fs.existsSync(outFile)) {
-        fs.unlinkSync(outFile);
-      }
-    } catch (e) {
-      // Ignore cleanup errors
-    }
-    throw error;
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
   }
 }
 
-// HTTP server
-const server = http.createServer(async (req, res) => {
-  // Enable CORS for development
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-  // Handle OPTIONS preflight
-  if (req.method === "OPTIONS") {
-    res.writeHead(204);
-    res.end();
-    return;
-  }
-
-  // Health check endpoint
-  if (req.method === "GET" && req.url === "/health") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "ok", version: "1.0.0" }));
-    return;
-  }
-
-  // Props inference endpoint
-  // Request: { tsxContent, contentHash, extension }
-  // Response: { keys: [...] }
-  if (req.method === "POST" && req.url === "/infer-props") {
+function readJsonBody(req, { maxBytes = 1_000_000 } = {}) {
+  return new Promise((resolve, reject) => {
     let body = "";
+    let received = 0;
 
     req.on("data", (chunk) => {
+      received += chunk.length;
+      if (received > maxBytes) {
+        reject(new HttpError(413, "Payload too large"));
+        req.destroy();
+        return;
+      }
       body += chunk.toString();
     });
 
-    req.on("end", async () => {
+    req.on("end", () => {
+      if (!body) {
+        resolve({});
+        return;
+      }
+
       try {
-        const { tsxContent, contentHash, extension } = JSON.parse(body);
-
-        if (!tsxContent) {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Missing tsxContent" }));
-          return;
-        }
-
-        const keys = inferProps(tsxContent, contentHash, extension || 'tsx');
-
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ keys }));
-      } catch (error) {
-        console.error("[ReactiveViews SSR] Props inference error:", error);
-
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({
-            error: error.message,
-            stack:
-              process.env.NODE_ENV === "development" ? error.stack : undefined,
-          })
-        );
+        resolve(JSON.parse(body));
+      } catch {
+        reject(new HttpError(400, "Invalid JSON payload"));
       }
     });
 
-    return;
-  }
+    req.on("error", (error) => reject(error));
+  });
+}
 
-  // Batch render endpoint - renders multiple components in parallel
-  // Request: { components: [{ componentPath, props }, ...] }
-  // Response: { results: [{ html } | { error }, ...] }
-  //
-  // This endpoint significantly improves performance by:
-  // - Reducing HTTP overhead (N requests -> 1 request)
-  // - Enabling parallel component rendering with Promise.all
-  // - Maintaining order of results to match input order
-  if (req.method === "POST" && req.url === "/batch-render") {
-    let body = "";
+function sendJson(res, statusCode, payload) {
+  res.writeHead(statusCode, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(payload));
+}
 
-    req.on("data", (chunk) => {
-      body += chunk.toString();
-    });
 
-    req.on("end", async () => {
-      try {
-        const { components } = JSON.parse(body);
+const Router = {
+  async handle(req, res) {
+    this.addCors(res);
 
-        if (!Array.isArray(components)) {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Expected components array" }));
-          return;
-        }
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
 
-        // Render all components in parallel using Promise.all
-        // Individual component failures don't fail the entire batch
-        const results = await Promise.all(
-          components.map(async ({ componentPath, props }) => {
-            try {
-              if (!componentPath) {
-                return { error: "Missing componentPath" };
-              }
-
-              const html = await renderComponent(componentPath, props || {});
-              return { html };
-            } catch (error) {
-              console.error(
-                `[ReactiveViews SSR] Error rendering ${componentPath}:`,
-                error
-              );
-              return {
-                error: error.message,
-                props:
-                  process.env.NODE_ENV === "development" ? props : undefined,
-              };
-            }
-          })
-        );
-
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ results }));
-      } catch (error) {
-        console.error("[ReactiveViews SSR] Batch render error:", error);
-
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({
-            error: error.message,
-            stack:
-              process.env.NODE_ENV === "development" ? error.stack : undefined,
-          })
-        );
+    try {
+      if (req.method === "GET" && req.url === "/health") {
+        sendJson(res, 200, { status: "ok", version: "1.0.0" });
+        return;
       }
-    });
 
-    return;
-  }
-
-  // Tree render endpoint - renders a component tree with true React composition
-  // Request: { componentPath, props, children: [...], htmlChildren: string }
-  // Response: { html } | { error }
-  //
-  // This endpoint enables true React composition by:
-  // - Building a complete React element tree
-  // - Importing all components in parallel (siblings)
-  // - Rendering as a single React tree (children prop works naturally)
-  if (req.method === "POST" && req.url === "/render-tree") {
-    let body = "";
-
-    req.on("data", (chunk) => {
-      body += chunk.toString();
-    });
-
-    req.on("end", async () => {
-      try {
-        const treeSpec = JSON.parse(body);
-
-        if (!treeSpec.componentPath) {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Missing componentPath" }));
-          return;
-        }
-
-        // Build React element tree recursively
-        const html = await renderComponentTree(treeSpec);
-
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ html }));
-      } catch (error) {
-        console.error("[ReactiveViews SSR] Tree render error:", error);
-
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({
-            error: error.message,
-            stack:
-              process.env.NODE_ENV === "development" ? error.stack : undefined,
-          })
-        );
+      if (req.method === "POST" && req.url === "/infer-props") {
+        await this.handleInferProps(req, res);
+        return;
       }
+
+      if (req.method === "POST" && req.url === "/batch-render") {
+        await this.handleBatchRender(req, res);
+        return;
+      }
+
+      if (req.method === "POST" && req.url === "/render-tree") {
+        await this.handleTreeRender(req, res);
+        return;
+      }
+
+      if (req.method === "POST" && req.url === "/render") {
+        await this.handleRender(req, res);
+        return;
+      }
+
+      sendJson(res, 404, { error: "Not found" });
+    } catch (error) {
+      this.handleError(res, error);
+    }
+  },
+
+  addCors(res) {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  },
+
+  async handleInferProps(req, res) {
+    const { tsxContent, contentHash, extension } = await readJsonBody(req, {
+      maxBytes: 256 * 1024,
     });
 
-    return;
-  }
+    if (!tsxContent) {
+      throw new HttpError(400, "Missing tsxContent");
+    }
 
-  // Render endpoint
-  if (req.method === "POST" && req.url === "/render") {
-    let body = "";
+    const keys = PropsInference.infer(
+      tsxContent,
+      contentHash,
+      extension || "tsx"
+    );
 
-    req.on("data", (chunk) => {
-      body += chunk.toString();
-    });
+    sendJson(res, 200, { keys });
+  },
 
-    req.on("end", async () => {
-      try {
-        const { componentPath, props } = JSON.parse(body);
+  async handleBatchRender(req, res) {
+    const { components } = await readJsonBody(req);
 
-        if (!componentPath) {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Missing componentPath" }));
-          return;
-        }
+    if (!Array.isArray(components)) {
+      throw new HttpError(400, "Expected components array");
+    }
 
-        const html = await renderComponent(componentPath, props || {});
-
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ html }));
-      } catch (error) {
-        console.error("[ReactiveViews SSR] Render error:", error);
-
-        // Parse request to get props for error reporting
-        let errorProps = {};
+    const results = await Promise.all(
+      components.map(async ({ componentPath, props }) => {
         try {
-          const { props } = JSON.parse(body);
-          errorProps = props;
-        } catch (e) {
-          // Ignore parse errors in error handler
-        }
+          if (!componentPath) {
+            return { error: "Missing componentPath" };
+          }
 
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({
+          const html = await renderComponent(componentPath, props || {});
+          return { html };
+        } catch (error) {
+          console.error(
+            `[ReactiveViews SSR] Error rendering ${componentPath}:`,
+            error
+          );
+          return {
             error: error.message,
-            props:
-              process.env.NODE_ENV === "development" ? errorProps : undefined,
-            stack:
-              process.env.NODE_ENV === "development" ? error.stack : undefined,
-          })
-        );
-      }
+            props: IS_DEV ? props : undefined,
+          };
+        }
+      })
+    );
+
+    sendJson(res, 200, { results });
+  },
+
+  async handleTreeRender(req, res) {
+    const treeSpec = await readJsonBody(req);
+
+    if (!treeSpec.componentPath) {
+      throw new HttpError(400, "Missing componentPath");
+    }
+
+    const html = await renderComponentTree(treeSpec);
+    sendJson(res, 200, { html });
+  },
+
+  async handleRender(req, res) {
+    const { componentPath, props } = await readJsonBody(req);
+
+    if (!componentPath) {
+      throw new HttpError(400, "Missing componentPath");
+    }
+
+    const html = await renderComponent(componentPath, props || {});
+    sendJson(res, 200, { html });
+  },
+
+  handleError(res, error) {
+    if (error instanceof HttpError) {
+      sendJson(res, error.status, { error: error.message });
+      return;
+    }
+
+    console.error("[ReactiveViews SSR] Unexpected error:", error);
+    sendJson(res, 500, {
+      error: error.message,
+      stack: IS_DEV ? error.stack : undefined,
     });
+  },
+};
 
-    return;
-  }
-
-  // 404 for other routes
-  res.writeHead(404, { "Content-Type": "application/json" });
-  res.end(JSON.stringify({ error: "Not found" }));
-});
+const server = http.createServer((req, res) => Router.handle(req, res));
 
 server.listen(PORT, () => {
   console.log(
@@ -674,6 +638,7 @@ server.listen(PORT, () => {
 process.on("SIGTERM", () => {
   console.log("[ReactiveViews SSR] Shutting down gracefully...");
   server.close(() => {
+    Bundler.clear();
     console.log("[ReactiveViews SSR] Server closed");
     process.exit(0);
   });
@@ -682,6 +647,7 @@ process.on("SIGTERM", () => {
 process.on("SIGINT", () => {
   console.log("[ReactiveViews SSR] Shutting down gracefully...");
   server.close(() => {
+    Bundler.clear();
     console.log("[ReactiveViews SSR] Server closed");
     process.exit(0);
   });

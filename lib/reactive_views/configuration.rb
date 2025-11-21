@@ -15,7 +15,10 @@ module ReactiveViews
                   :max_nesting_depth_warning,
                   :props_inference_enabled,
                   :props_inference_cache_ttl_seconds,
-                  :full_page_enabled
+                  :full_page_enabled,
+                  :cache_namespace
+
+    attr_reader :cache_store
 
     # Alias for easier testing
     alias component_paths component_views_paths
@@ -36,6 +39,17 @@ module ReactiveViews
       @props_inference_enabled = true
       @props_inference_cache_ttl_seconds = 300
       @full_page_enabled = true
+      @cache_namespace = "reactive_views"
+      self.cache_store = :memory
+    end
+
+    def cache_store=(store)
+      @cache_store = CacheStore.build(store)
+    end
+
+    def cache_for(scope)
+      scope_name = scope.to_s
+      cache_store.namespaced("#{cache_namespace}:#{scope_name}")
     end
   end
 end

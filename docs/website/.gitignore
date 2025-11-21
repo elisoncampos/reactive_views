@@ -1,0 +1,10 @@
+# Generated output
+build
+.docusaurus
+
+# Dependencies
+node_modules
+
+# Misc
+.DS_Store
+

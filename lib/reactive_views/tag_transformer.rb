@@ -3,6 +3,7 @@
 require "nokogiri"
 require "securerandom"
 require "json"
+require "strscan"
 
 module ReactiveViews
   class TagTransformer
@@ -11,6 +12,7 @@ module ReactiveViews
     def self.transform(html)
       return html unless ReactiveViews.config.enabled
       return html if html.nil? || html.empty?
+      return html unless contains_pascal_case_tag?(html)
 
       # Extract original component names before Nokogiri lowercases them
       component_name_map = extract_component_names(html)
@@ -74,23 +76,23 @@ module ReactiveViews
     end
 
     private_class_method def self.extract_component_names(html)
-      # Find all React component tags (PascalCase) and their attributes before Nokogiri lowercases them
-      # Matches: <ComponentName ...> or <ComponentName/>
       component_map = {}
-      # Match component tags and capture everything until the closing >
-      html.scan(%r{<([A-Z][a-zA-Z0-9]*)(.*?)(?:/?>)}) do |component_name, attrs_str|
+      scanner = StringScanner.new(html)
+
+      while scanner.scan_until(/<([A-Z][a-zA-Z0-9]*)([^>]*)\/?>/m)
+        component_name = scanner[1]
+        attrs_segment = scanner[2] || ""
         lowercase_name = component_name.downcase
 
-        # Store component name mapping
-        component_map[lowercase_name] ||= { name: component_name, attrs: {} }
+        entry = (component_map[lowercase_name] ||= { name: component_name, attrs: {} })
 
-        # Extract attribute names (both camelCase and other styles)
-        # Match: attrName="value" or attrName='value' or attrName={value}
-        attrs_str.scan(/([a-zA-Z][a-zA-Z0-9]*)=/) do |attr_name|
-          attr_lowercase = attr_name[0].downcase
-          component_map[lowercase_name][:attrs][attr_lowercase] = attr_name[0]
+        attrs_scanner = StringScanner.new(attrs_segment)
+        while attrs_scanner.scan_until(/([a-zA-Z_][a-zA-Z0-9_-]*)\s*=/)
+          attr_name = attrs_scanner[1]
+          entry[:attrs][attr_name.downcase] = attr_name
         end
       end
+
       component_map
     end
 
@@ -448,6 +450,10 @@ module ReactiveViews
       # examplehello -> ExampleHello
       # We capitalize the first letter and look for common component name patterns
       name.split(/[-_]/).map(&:capitalize).join
+    end
+
+    private_class_method def self.contains_pascal_case_tag?(html)
+      html.match?(%r{<\s*[A-Z][a-zA-Z0-9]})
     end
   end
 end

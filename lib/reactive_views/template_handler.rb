@@ -14,7 +14,12 @@ module ReactiveViews
           content = begin
             #{compiled_source}
           end
-          ReactiveViews::FullPageRenderer.render_content(controller, content, extension: '#{extension}')
+          ReactiveViews::FullPageRenderer.render_content(
+            controller,
+            content,
+            extension: '#{extension}',
+            identifier: #{template.identifier.inspect}
+          )
           RUBY
         end
       end

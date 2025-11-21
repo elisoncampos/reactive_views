@@ -4,9 +4,11 @@ require 'spec_helper'
 require_relative '../../lib/reactive_views'
 
 RSpec.describe ReactiveViews::ComponentResolver do
-  let(:test_dir) { File.join(__dir__, '..', 'fixtures', 'components') }
+  let(:test_dir) { File.expand_path(File.join(__dir__, '..', 'fixtures', 'components')) }
 
   before do
+    described_class.clear_cache
+
     ReactiveViews.configure do |config|
       config.component_views_paths = [ test_dir ]
       config.component_js_paths = []
@@ -17,6 +19,10 @@ RSpec.describe ReactiveViews::ComponentResolver do
 
   after do
     FileUtils.rm_rf(test_dir) if File.exist?(test_dir)
+  end
+
+  after do
+    described_class.clear_cache
   end
 
   describe '.resolve' do
@@ -70,7 +76,7 @@ RSpec.describe ReactiveViews::ComponentResolver do
     end
 
     context 'with multiple component paths' do
-      let(:other_dir) { File.join(__dir__, '..', 'fixtures', 'other_components') }
+      let(:other_dir) { File.expand_path(File.join(__dir__, '..', 'fixtures', 'other_components')) }
 
       before do
         FileUtils.mkdir_p(other_dir)
@@ -188,6 +194,54 @@ RSpec.describe ReactiveViews::ComponentResolver do
 
         result = described_class.resolve('UserProfileCard')
         expect(result).to eq(component_path)
+      end
+    end
+
+    context 'with caching' do
+      let(:component_name) { 'CachedComponent' }
+      let(:component_path) { File.join(test_dir, "#{component_name}.tsx") }
+
+      before do
+        File.write(component_path, 'export default function CachedComponent() {}')
+      end
+
+      it 'memoizes resolved paths until the file changes' do
+        expect(described_class.resolve(component_name)).to eq(component_path)
+
+        expect(Dir).not_to receive(:glob)
+        expect(described_class.resolve(component_name)).to eq(component_path)
+      end
+
+      it 'refreshes the cache when the file mtime changes' do
+        expect(described_class.resolve(component_name)).to eq(component_path)
+
+        expect(Dir).to receive(:glob).at_least(:once).and_call_original
+
+        File.write(component_path, 'export default function CachedComponent() { return null; }')
+        File.utime(Time.now + 1, Time.now + 1, component_path)
+
+        expect(described_class.resolve(component_name)).to eq(component_path)
+      end
+
+      it 'allows invalidation via ActiveSupport notifications' do
+        skip 'ActiveSupport notifications unavailable' unless defined?(ActiveSupport::Notifications)
+
+        call_count = 0
+        allow(Dir).to receive(:glob).and_wrap_original do |method, *args|
+          call_count += 1
+          method.call(*args)
+        end
+
+        expect(described_class.resolve(component_name)).to eq(component_path)
+        initial_calls = call_count
+
+        expect(described_class.resolve(component_name)).to eq(component_path)
+        expect(call_count).to eq(initial_calls)
+
+        ActiveSupport::Notifications.instrument('reactive_views.file_changed', path: component_path)
+
+        expect(described_class.resolve(component_name)).to eq(component_path)
+        expect(call_count).to be > initial_calls
       end
     end
   end

@@ -13,6 +13,7 @@ RSpec.describe ReactiveViews::FullPageRenderer do
       view_context: view_context_double,
       view_assigns: view_assigns,
       controller_path: 'users',
+      controller_name: 'users',
       action_name: 'index',
       respond_to?: false
     )
@@ -22,11 +23,13 @@ RSpec.describe ReactiveViews::FullPageRenderer do
     double('ViewContext').tap do |vc|
       # Stub lookup_context to return nil so we use the fallback path in tests
       allow(vc).to receive(:respond_to?).with(:lookup_context).and_return(false)
+      allow(vc).to receive(:assigns).and_return(view_assigns)
     end
   end
   let(:view_assigns) { { 'users' => [ { id: 1, name: 'Alice' } ] } }
   let(:template_path) { '/path/to/template.tsx.erb' }
   let(:tsx_content) { 'export default function Page({ users }) { return <div />; }' }
+  let(:temp_file) { ReactiveViews::TempFileManager::TempFile.new('/tmp/reactive_views_full_page/page.tsx') }
 
   before do
     ReactiveViews.configure do |config|
@@ -35,9 +38,10 @@ RSpec.describe ReactiveViews::FullPageRenderer do
     end
 
     allow(File).to receive(:read).with(template_path).and_return('export default function() {}')
-    allow(File).to receive(:write)
-    allow(File).to receive(:exist?).and_return(true)
-    allow(File).to receive(:delete)
+    allow(view_context_double).to receive(:controller).and_return(controller_double)
+
+    allow(ReactiveViews::TempFileManager).to receive(:write).and_return(temp_file)
+    allow(temp_file).to receive(:delete)
   end
 
   describe '.render' do
@@ -54,7 +58,7 @@ RSpec.describe ReactiveViews::FullPageRenderer do
 
       expect(result).to eq('<div>SSR</div>')
       expect(ReactiveViews::Renderer).to have_received(:render_path).with(
-        a_string_matching(/\.tsx$/),
+        temp_file.path,
         hash_including(users: [ { id: 1, name: 'Alice' } ])
       )
     end
@@ -99,8 +103,9 @@ RSpec.describe ReactiveViews::FullPageRenderer do
       allow(mock_template).to receive(:render).and_return(annotated)
 
       written_content = nil
-      allow(File).to receive(:write) do |_path, content|
+      allow(ReactiveViews::TempFileManager).to receive(:write) do |content, **_|
         written_content = content
+        temp_file
       end
 
       allow(ReactiveViews::PropsInference).to receive(:infer_props).and_return([])

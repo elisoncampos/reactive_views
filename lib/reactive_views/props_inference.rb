@@ -10,35 +10,10 @@ module ReactiveViews
   class PropsInference
     class InferenceError < StandardError; end
 
-    # Simple in-memory cache with TTL support
-    class Cache
-      def initialize
-        @store = {}
-        @timestamps = {}
-      end
-
-      def get(key, ttl_seconds)
-        return nil unless @store.key?(key)
-        return nil if ttl_seconds && Time.now.to_i - @timestamps[key] > ttl_seconds
-
-        @store[key]
-      end
-
-      def set(key, value)
-        @store[key] = value
-        @timestamps[key] = Time.now.to_i
-      end
-
-      def clear
-        @store.clear
-        @timestamps.clear
-      end
-    end
-
-    @cache = Cache.new
-
     class << self
-      attr_reader :cache
+      def cache
+        inference_cache
+      end
 
       # Infer prop keys from TSX component signature
       #
@@ -51,9 +26,9 @@ module ReactiveViews
         # Generate cache key from content digest
         content_digest = Digest::SHA256.hexdigest(tsx_content)
         ttl = ReactiveViews.config.props_inference_cache_ttl_seconds
+        cache_store = inference_cache
 
-        # Check cache
-        if ttl && (cached = @cache.get(content_digest, ttl))
+        if ttl && (cached = cache_store.read(content_digest))
           return cached
         end
 
@@ -61,7 +36,7 @@ module ReactiveViews
         keys = make_inference_request(tsx_content, content_digest, extension)
 
         # Cache the result
-        @cache.set(content_digest, keys) if ttl
+        cache_store.write(content_digest, keys, ttl: ttl) if ttl
 
         keys
       rescue StandardError => e
@@ -70,6 +45,10 @@ module ReactiveViews
       end
 
       private
+
+      def inference_cache
+        ReactiveViews.config.cache_for(:props_inference)
+      end
 
       def make_inference_request(tsx_content, content_digest, extension)
         uri = URI.parse("#{ReactiveViews.config.ssr_url}/infer-props")

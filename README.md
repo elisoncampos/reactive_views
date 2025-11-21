@@ -107,6 +107,53 @@ bin/dev
 
 This starts Rails, Vite, and the SSR server together. You're ready to use React components in your Rails views!
 
+## Documentation site
+
+We ship a Docusaurus-powered site in `docs/website` (styled similar to [Inertia Rails](https://inertia-rails.dev/)) with quickstart, caching, SSR, and troubleshooting guides.
+
+```bash
+cd docs/website
+npm install        # once
+npm run start      # local docs dev server
+```
+
+GitHub Pages deploys automatically from `main` via `.github/workflows/docs.yml`.
+
+### Configuring caching
+
+ReactiveViews ships with a thread-safe in-memory cache by default, but you can plug in any `ActiveSupport::Cache` store (Solid Cache, Redis, MemCache, etc.) or your own adapter:
+
+```ruby
+ReactiveViews.configure do |config|
+  # Use the default memory store (no extra deps)
+  config.cache_store = :memory
+
+  # Or reuse an ActiveSupport::Cache store (Solid Cache)
+  # config.cache_store = :solid_cache_store
+
+  # Or wire Redis with custom options
+  # config.cache_store = [ :redis_cache_store, { url: ENV["REDIS_URL"], namespace: "rv-cache" } ]
+
+  # Optionally isolate ReactiveViews keys from the rest of your app cache
+  config.cache_namespace = "reactive_views"
+
+  # Control how long SSR fragments stay cached
+  config.ssr_cache_ttl_seconds = 30
+  config.props_inference_cache_ttl_seconds = 300
+end
+```
+
+Both the renderer and props inference client respect this shared store, so you can keep caches warm across Puma workers or even multiple hosts when using Redis/Solid Cache.
+
+### SSR server runtime
+
+The Node SSR server now caches esbuild bundles per component (keyed by path + mtime + environment) to avoid re-compiling the same component on every request. Tune the cache via environment variables:
+
+- `RV_SSR_BUNDLE_CACHE` – maximum number of compiled components to keep in memory/disk (default: `20`)
+- `RV_SSR_PORT` / `RV_VITE_PORT` – ports for the SSR server and Vite dev server
+
+Bundles are automatically evicted (LRU) and cleaned up on shutdown, giving you deterministic performance without manual temp-file management.
+
 ## Example
 
 ### Island Architecture (Components in ERB)

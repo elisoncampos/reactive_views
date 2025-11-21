@@ -8,72 +8,117 @@ module ReactiveViews
   class Renderer
     class RenderError < StandardError; end
 
-    # Simple in-memory cache with TTL support
-    class Cache
-      def initialize
-        @store = {}
-        @timestamps = {}
+    # Lightweight persistent HTTP client that reuses connections
+    class HttpClient
+      DEFAULT_HEADERS = {
+        "Content-Type" => "application/json",
+        "Connection" => "keep-alive",
+        "User-Agent" => "ReactiveViews-Ruby"
+      }.freeze
+
+      attr_reader :base_url
+
+      def initialize(base_url)
+        @base_url = base_url
+        @base_uri = URI.parse(base_url)
+        @mutex = Mutex.new
+        @http = nil
       end
 
-      def get(key, ttl_seconds)
-        return nil unless @store.key?(key)
-        return nil if ttl_seconds && Time.now.to_i - @timestamps[key] > ttl_seconds
+      def post_json(path, body:, headers: {}, timeout: {})
+        request = Net::HTTP::Post.new(
+          normalized_path(path),
+          DEFAULT_HEADERS.merge(headers)
+        )
+        request.body = JSON.generate(body)
 
-        @store[key]
+        with_connection(timeout) do |http|
+          http.request(request)
+        end
       end
 
-      def set(key, value)
-        @store[key] = value
-        @timestamps[key] = Time.now.to_i
+      def shutdown
+        @mutex.synchronize do
+          if @http&.started?
+            @http.finish
+          end
+        rescue IOError
+          nil
+        ensure
+          @http = nil
+        end
       end
 
-      def clear
-        @store.clear
-        @timestamps.clear
+      private
+
+      def with_connection(timeout)
+        attempt = 0
+        begin
+          attempt += 1
+          @mutex.synchronize do
+            ensure_connection
+            apply_timeouts(timeout)
+            return yield(@http)
+          end
+        rescue IOError, Errno::ECONNRESET, Errno::EPIPE
+          shutdown
+          retry if attempt < 2
+          raise
+        end
+      end
+
+      def ensure_connection
+        return if @http&.started?
+
+        @http = Net::HTTP.new(@base_uri.host, @base_uri.port)
+        @http.use_ssl = @base_uri.scheme == "https"
+        @http.keep_alive_timeout = 30
+        @http.start
+      end
+
+      def apply_timeouts(timeout)
+        return if timeout.nil? || timeout.empty?
+
+        @http.open_timeout = timeout[:open] if timeout[:open]
+        @http.read_timeout = timeout[:read] if timeout[:read]
+        @http.write_timeout = timeout[:write] if timeout[:write]
+      end
+
+      def normalized_path(path)
+        request_path = path.start_with?("/") ? path : "/#{path}"
+        base_path = @base_uri.path.to_s
+        base_path = "" if base_path == "/" || base_path.empty?
+        full_path = "#{base_path}#{request_path}"
+        full_path.empty? ? "/" : full_path
       end
     end
 
-    @cache = Cache.new
-
     class << self
-      attr_reader :cache
+      def cache
+        renderer_cache
+      end
 
       def render(component_name, props = {})
         return "" unless ReactiveViews.config.enabled
 
-        # Resolve component path
         component_path = ComponentResolver.resolve(component_name)
 
         unless component_path
-          # Build detailed error message with searched paths
-          search_paths = ReactiveViews.config.component_views_paths + ReactiveViews.config.component_js_paths
-          paths_info = search_paths.map do |path|
-            if defined?(Rails)
-              Rails.root.join(path).to_s
-            else
-              File.expand_path(path)
-            end
-          end.join(", ")
-
-          error_msg = "Component '#{component_name}' not found. Searched in: #{paths_info}"
+          error_msg = build_missing_component_error(component_name)
           return handle_error(component_name, props, RenderError.new(error_msg))
         end
 
-        # Generate cache key
-        cache_key = generate_cache_key(component_name, props)
         ttl = ReactiveViews.config.ssr_cache_ttl_seconds
+        cache_key = generate_cache_key(component_name, props)
+        cache_store = renderer_cache
 
-        # Check cache
-        if ttl && (cached = @cache.get(cache_key, ttl))
+        if ttl && (cached = cache_store.read(cache_key))
           return cached
         end
 
-        # Make SSR request
-        html = make_ssr_request(component_path, props)
+        html = make_ssr_request(component_path, props, component_name: component_name)
 
-        # Cache the result
-        @cache.set(cache_key, html) if ttl
-
+        cache_store.write(cache_key, html, ttl: ttl) if ttl
         html
       rescue StandardError => e
         handle_error(component_name, props, e)
@@ -86,7 +131,7 @@ module ReactiveViews
       def render_path(component_path, props = {})
         return "" unless ReactiveViews.config.enabled
 
-        make_ssr_request(component_path, props)
+        make_ssr_request(component_path, props, component_name: component_path)
       rescue StandardError => e
         handle_error(component_path, props, e)
       end
@@ -121,47 +166,47 @@ module ReactiveViews
         return { error: resolved_tree[:error] } if resolved_tree[:error]
 
         # Make tree SSR request
-        make_tree_ssr_request(resolved_tree)
+        make_tree_ssr_request(resolved_tree, tree_spec[:component_name])
       rescue StandardError => e
         { error: e.message }
       end
 
       def clear_cache
-        @cache.clear
+        renderer_cache.clear
       end
 
       private
+
+      def renderer_cache
+        ReactiveViews.config.cache_for(:renderer)
+      end
+
+      def build_missing_component_error(component_name)
+        search_paths = ReactiveViews.config.component_views_paths + ReactiveViews.config.component_js_paths
+        paths_info = search_paths.map do |path|
+          if defined?(Rails)
+            Rails.root.join(path).to_s
+          else
+            File.expand_path(path)
+          end
+        end.join(", ")
+
+        "Component '#{component_name}' not found. Searched in: #{paths_info}"
+      end
 
       def generate_cache_key(component_name, props)
         "#{component_name}:#{props.to_json}"
       end
 
-      def make_ssr_request(component_path, props)
-        uri = URI.parse("#{ReactiveViews.config.ssr_url}/render")
+      def make_ssr_request(component_path, props, component_name:)
+        response = http_client.post_json(
+          "/render",
+          body: { componentPath: component_path, props: props },
+          headers: metadata_headers(component_name: component_name, component_path: component_path),
+          timeout: request_timeouts(:render)
+        )
 
-        http = Net::HTTP.new(uri.host, uri.port)
-        http.open_timeout = ReactiveViews.config.ssr_timeout || 2
-        http.read_timeout = ReactiveViews.config.ssr_timeout || 5
-
-        request = Net::HTTP::Post.new(uri.request_uri)
-        request["Content-Type"] = "application/json"
-        request.body = { componentPath: component_path, props: props }.to_json
-
-        response = http.request(request)
-
-        unless response.is_a?(Net::HTTPSuccess)
-          error_body = response.body
-          begin
-            error_json = JSON.parse(error_body)
-            error_message = error_json["error"] || error_body
-          rescue JSON::ParserError
-            error_message = error_body
-          end
-          raise RenderError, "SSR server returned #{response.code}: #{error_message}"
-        end
-
-        result = JSON.parse(response.body)
-
+        result = parse_response_body(response)
         raise RenderError, result["error"] if result["error"]
 
         result["html"] || ""
@@ -221,23 +266,14 @@ module ReactiveViews
       end
 
       def execute_batch_http_request(valid_requests)
-        uri = URI.parse("#{ReactiveViews.config.ssr_url}/batch-render")
+        response = http_client.post_json(
+          "/batch-render",
+          body: { components: valid_requests },
+          headers: metadata_headers(batch_size: valid_requests.size),
+          timeout: request_timeouts(:batch)
+        )
 
-        http = Net::HTTP.new(uri.host, uri.port)
-        http.open_timeout = ReactiveViews.config.ssr_timeout || 2
-        http.read_timeout = ReactiveViews.config.batch_timeout || 10
-
-        request = Net::HTTP::Post.new(uri.request_uri)
-        request["Content-Type"] = "application/json"
-        request.body = { components: valid_requests }.to_json
-
-        response = http.request(request)
-
-        unless response.is_a?(Net::HTTPSuccess)
-          raise RenderError, "SSR server returned #{response.code}: #{response.body}"
-        end
-
-        result = JSON.parse(response.body)
+        result = parse_response_body(response)
         result["results"] || []
       end
 
@@ -307,31 +343,18 @@ module ReactiveViews
         }
       end
 
-      def make_tree_ssr_request(resolved_tree)
-        uri = URI.parse("#{ReactiveViews.config.ssr_url}/render-tree")
+      def make_tree_ssr_request(resolved_tree, root_component_name)
+        response = http_client.post_json(
+          "/render-tree",
+          body: resolved_tree,
+          headers: metadata_headers(
+            component_name: root_component_name,
+            component_path: resolved_tree[:componentPath]
+          ),
+          timeout: request_timeouts(:tree)
+        )
 
-        http = Net::HTTP.new(uri.host, uri.port)
-        http.open_timeout = ReactiveViews.config.ssr_timeout || 2
-        http.read_timeout = ReactiveViews.config.batch_timeout || 10
-
-        request = Net::HTTP::Post.new(uri.request_uri)
-        request["Content-Type"] = "application/json"
-        request.body = resolved_tree.to_json
-
-        response = http.request(request)
-
-        unless response.is_a?(Net::HTTPSuccess)
-          error_body = response.body
-          begin
-            error_json = JSON.parse(error_body)
-            error_message = error_json["error"] || error_body
-          rescue JSON::ParserError
-            error_message = error_body
-          end
-          return { error: "SSR server returned #{response.code}: #{error_message}" }
-        end
-
-        result = JSON.parse(response.body)
+        result = parse_response_body(response)
 
         if result["error"]
           { error: result["error"] }
@@ -353,6 +376,59 @@ module ReactiveViews
         end
 
         "___REACTIVE_VIEWS_ERROR___#{error.message}___"
+      end
+
+      def parse_response_body(response)
+        unless response.is_a?(Net::HTTPSuccess)
+          error_message = extract_error_message(response.body)
+          raise RenderError, "SSR server returned #{response.code}: #{error_message}"
+        end
+
+        JSON.parse(response.body)
+      end
+
+      def extract_error_message(body)
+        JSON.parse(body)["error"]
+      rescue JSON::ParserError
+        body
+      end
+
+      def metadata_headers(component_name: nil, component_path: nil, batch_size: nil, extra: {})
+        headers = {}
+        headers["X-ReactiveViews-Component"] = component_name if component_name
+        headers["X-ReactiveViews-Component-Path"] = component_path if component_path
+        headers["X-ReactiveViews-Batch-Size"] = batch_size.to_s if batch_size
+        headers.merge!(extra) if extra
+        headers
+      end
+
+      def request_timeouts(type)
+        config = ReactiveViews.config
+        open_timeout = config.ssr_timeout || 2
+        read_timeout =
+          case type
+          when :batch, :tree
+            config.batch_timeout || 10
+          else
+            config.ssr_timeout || 5
+          end
+        { open: open_timeout, read: read_timeout }
+      end
+
+      def http_client
+        current_url = ReactiveViews.config.ssr_url
+        http_client_mutex.synchronize do
+          if !defined?(@http_client) || @http_client.nil? || @http_client.base_url != current_url
+            @http_client&.shutdown if defined?(@http_client) && @http_client
+            @http_client = HttpClient.new(current_url)
+          end
+
+          @http_client
+        end
+      end
+
+      def http_client_mutex
+        @http_client_mutex ||= Mutex.new
       end
     end
   end

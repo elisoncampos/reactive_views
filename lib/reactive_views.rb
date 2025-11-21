@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "reactive_views/version"
+require_relative "reactive_views/cache_store"
 require_relative "reactive_views/configuration"
 require_relative "reactive_views/component_resolver"
 require_relative "reactive_views/renderer"

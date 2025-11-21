@@ -1,0 +1,12 @@
+<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ReactiveViews">
+  <defs>
+    <linearGradient id="rvGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4c4fff"/>
+      <stop offset="100%" stop-color="#2f36d8"/>
+    </linearGradient>
+  </defs>
+  <rect width="120" height="120" rx="28" fill="url(#rvGradient)"/>
+  <path d="M35 60c0-13.807 11.193-25 25-25s25 11.193 25 25-11.193 25-25 25" fill="none" stroke="#ffffff" stroke-width="8" stroke-linecap="round"/>
+  <path d="M30 82c6 10 16 18 30 18 14 0 25-8 31-18" fill="none" stroke="#ffffff" stroke-width="8" stroke-linecap="round"/>
+</svg>
+
