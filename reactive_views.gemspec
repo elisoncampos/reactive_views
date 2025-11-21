@@ -5,8 +5,8 @@ require_relative 'lib/reactive_views/version'
 Gem::Specification.new do |spec|
   spec.name = 'reactive_views'
   spec.version = ReactiveViews::VERSION
-  spec.authors = ['Elison Campos']
-  spec.email = ['elison.campos@gmail.com']
+  spec.authors = [ 'Elison Campos' ]
+  spec.email = [ 'elison.campos@gmail.com' ]
 
   spec.summary = 'Reactive, incremental React for Rails — SSR + hydration islands with optional SPA-like navigation.'
   spec.description = 'ReactiveViews brings React components to Rails with SSR and client-side hydration islands.'
@@ -29,14 +29,14 @@ Gem::Specification.new do |spec|
 
   spec.bindir = 'exe'
   spec.executables = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
-  spec.require_paths = ['lib']
+  spec.require_paths = [ 'lib' ]
 
   spec.add_dependency 'nokogiri', '>= 1.14'
   spec.add_dependency 'rails', '>= 6.1'
   spec.add_dependency 'vite_rails'
 
   spec.add_development_dependency 'capybara', '~> 3.39'
-  spec.add_development_dependency 'combustion', '~> 1.4'
+  spec.add_development_dependency 'cuprite'
   spec.add_development_dependency 'puma', '~> 6.0'
   spec.add_development_dependency 'rspec', '~> 3.0'
   spec.add_development_dependency 'rspec-rails', '~> 6.0'
@@ -45,8 +45,8 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency 'rubocop-rake', '~> 0.6'
   spec.add_development_dependency 'rubocop-rspec', '~> 3.0'
   spec.add_development_dependency 'rubocop-rspec_rails', '~> 2.28'
-  spec.add_development_dependency 'selenium-webdriver', '~> 4.16'
   spec.add_development_dependency 'simplecov', '~> 0.22'
   spec.add_development_dependency 'sqlite3', '~> 2.0'
   spec.add_development_dependency 'webmock', '~> 3.19'
+  spec.add_development_dependency 'propshaft'
 end

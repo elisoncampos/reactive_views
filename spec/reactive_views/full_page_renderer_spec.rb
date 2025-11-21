@@ -24,7 +24,7 @@ RSpec.describe ReactiveViews::FullPageRenderer do
       allow(vc).to receive(:respond_to?).with(:lookup_context).and_return(false)
     end
   end
-  let(:view_assigns) { { 'users' => [{ id: 1, name: 'Alice' }] } }
+  let(:view_assigns) { { 'users' => [ { id: 1, name: 'Alice' } ] } }
   let(:template_path) { '/path/to/template.tsx.erb' }
   let(:tsx_content) { 'export default function Page({ users }) { return <div />; }' }
 
@@ -47,7 +47,7 @@ RSpec.describe ReactiveViews::FullPageRenderer do
       allow(ActionView::Template).to receive(:handler_for_extension).with('erb').and_return(double)
       allow(mock_template).to receive(:render).and_return(tsx_content)
 
-      allow(ReactiveViews::PropsInference).to receive(:infer_props).and_return(['users'])
+      allow(ReactiveViews::PropsInference).to receive(:infer_props).and_return([ 'users' ])
       allow(ReactiveViews::Renderer).to receive(:render_path).and_return('<div>SSR</div>')
 
       result = described_class.render(controller_double, template_full_path: template_path)
@@ -55,13 +55,13 @@ RSpec.describe ReactiveViews::FullPageRenderer do
       expect(result).to eq('<div>SSR</div>')
       expect(ReactiveViews::Renderer).to have_received(:render_path).with(
         a_string_matching(/\.tsx$/),
-        hash_including(users: [{ id: 1, name: 'Alice' }])
+        hash_including(users: [ { id: 1, name: 'Alice' } ])
       )
     end
 
     it 'filters props based on inference' do
       view_assigns_with_extras = {
-        'users' => [{ id: 1 }],
+        'users' => [ { id: 1 } ],
         'secret' => 'should_not_pass'
       }
       allow(controller_double).to receive(:view_assigns).and_return(view_assigns_with_extras)
@@ -71,7 +71,7 @@ RSpec.describe ReactiveViews::FullPageRenderer do
       allow(ActionView::Template).to receive(:handler_for_extension).with('erb').and_return(double)
       allow(mock_template).to receive(:render).and_return(tsx_content)
 
-      allow(ReactiveViews::PropsInference).to receive(:infer_props).and_return(['users'])
+      allow(ReactiveViews::PropsInference).to receive(:infer_props).and_return([ 'users' ])
 
       received_props = nil
       allow(ReactiveViews::Renderer).to receive(:render_path) do |_path, props|
@@ -81,8 +81,36 @@ RSpec.describe ReactiveViews::FullPageRenderer do
 
       described_class.render(controller_double, template_full_path: template_path)
 
-      expect(received_props.keys).to eq([:users])
+      expect(received_props.keys).to eq([ :users ])
       expect(received_props.keys).not_to include(:secret)
+    end
+
+    it 'strips Rails annotation comments before SSR' do
+      annotated = ActionView::OutputBuffer.new <<~TSX
+        <!-- BEGIN app/views/users/index.tsx.erb -->
+        export default function Page() { return <div>Hi</div>; }
+        <!-- END app/views/users/index.tsx.erb -->
+      TSX
+
+      mock_template = double('Template')
+      handler = double
+      allow(ActionView::Template).to receive(:handler_for_extension).with('erb').and_return(handler)
+      allow(ActionView::Template).to receive(:new).and_return(mock_template)
+      allow(mock_template).to receive(:render).and_return(annotated)
+
+      written_content = nil
+      allow(File).to receive(:write) do |_path, content|
+        written_content = content
+      end
+
+      allow(ReactiveViews::PropsInference).to receive(:infer_props).and_return([])
+      allow(ReactiveViews::Renderer).to receive(:render_path).and_return('<div />')
+
+      described_class.render(controller_double, template_full_path: template_path)
+
+      expect(written_content).not_to include('BEGIN app/views')
+      expect(written_content).not_to include('END app/views')
+      expect(written_content).to include('export default function Page')
     end
   end
 end

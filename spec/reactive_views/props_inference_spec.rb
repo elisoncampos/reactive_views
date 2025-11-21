@@ -73,15 +73,15 @@ RSpec.describe ReactiveViews::PropsInference do
 
         # First call should hit the server
         stub = stub_request(:post, 'http://localhost:5175/infer-props')
-               .to_return(status: 200, body: { keys: ['name'] }.to_json)
+               .to_return(status: 200, body: { keys: [ 'name' ] }.to_json)
 
         keys1 = described_class.infer_props(tsx_content)
-        expect(keys1).to eq(['name'])
+        expect(keys1).to eq([ 'name' ])
         expect(stub).to have_been_requested.once
 
         # Second call with same content should use cache
         keys2 = described_class.infer_props(tsx_content)
-        expect(keys2).to eq(['name'])
+        expect(keys2).to eq([ 'name' ])
         expect(stub).to have_been_requested.once # Still only once
       end
 
@@ -90,18 +90,18 @@ RSpec.describe ReactiveViews::PropsInference do
         tsx_content2 = 'export default function C2({ b }: P) { return <div />; }'
 
         stub1 = stub_request(:post, 'http://localhost:5175/infer-props')
-                .with(body: hash_including('tsxContent' => tsx_content1))
-                .to_return(status: 200, body: { keys: ['a'] }.to_json)
+                .with(body: hash_including('tsxContent' => tsx_content1, 'extension' => 'tsx'))
+                .to_return(status: 200, body: { keys: [ 'a' ] }.to_json)
 
         stub2 = stub_request(:post, 'http://localhost:5175/infer-props')
-                .with(body: hash_including('tsxContent' => tsx_content2))
-                .to_return(status: 200, body: { keys: ['b'] }.to_json)
+                .with(body: hash_including('tsxContent' => tsx_content2, 'extension' => 'tsx'))
+                .to_return(status: 200, body: { keys: [ 'b' ] }.to_json)
 
         keys1 = described_class.infer_props(tsx_content1)
         keys2 = described_class.infer_props(tsx_content2)
 
-        expect(keys1).to eq(['a'])
-        expect(keys2).to eq(['b'])
+        expect(keys1).to eq([ 'a' ])
+        expect(keys2).to eq([ 'b' ])
         expect(stub1).to have_been_requested.once
         expect(stub2).to have_been_requested.once
       end
@@ -166,6 +166,20 @@ RSpec.describe ReactiveViews::PropsInference do
         keys = described_class.infer_props(tsx_content)
         expect(keys).to eq([])
         expect(stub).not_to have_been_requested
+      end
+    end
+
+    context 'with custom extensions' do
+      it 'passes the provided extension to the SSR server' do
+        tsx_content = 'export default function C({ x }: P) { return <div />; }'
+
+        stub = stub_request(:post, 'http://localhost:5175/infer-props')
+               .with { |req| JSON.parse(req.body)['extension'] == 'jsx' }
+               .to_return(status: 200, body: { keys: [] }.to_json)
+
+        described_class.infer_props(tsx_content, extension: 'jsx')
+
+        expect(stub).to have_been_requested.once
       end
     end
   end

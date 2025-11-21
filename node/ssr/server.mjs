@@ -30,20 +30,41 @@ console.log(`[ReactiveViews SSR] Port: ${PORT}`);
 const propsInferenceCache = new Map();
 
 // Lazy-load TypeScript compiler for props inference
-let ts = null;
-async function getTypeScript() {
-  if (!ts) {
-    ts = await import(projectRequire.resolve("typescript"));
+let cachedTypeScript = null;
+let typescriptMissing = false;
+
+function loadTypeScript() {
+  if (cachedTypeScript) {
+    return cachedTypeScript;
   }
-  return ts;
+
+  if (typescriptMissing) {
+    return null;
+  }
+
+  try {
+    cachedTypeScript = projectRequire("typescript");
+    return cachedTypeScript;
+  } catch (error) {
+    if (error.code === "MODULE_NOT_FOUND") {
+      typescriptMissing = true;
+      console.warn(
+        "[ReactiveViews SSR] TypeScript not found in the host app. " +
+          "Props inference will be skipped. Install it with `yarn add -D typescript` or disable props inference."
+      );
+      return null;
+    }
+
+    throw error;
+  }
 }
 
 /**
- * Infer prop keys from TSX component signature
+ * Infer prop keys from TSX/JSX component signature
  * Supports: export default function Component({ a, b }: Props) {}
  * Supports: const Component = ({ a, b }: Props) => {}; export default Component
  */
-function inferPropsFromTSX(tsxContent, contentHash) {
+function inferProps(content, contentHash, extension = 'tsx') {
   // Check cache first
   if (propsInferenceCache.has(contentHash)) {
     console.log(`[ReactiveViews SSR] Props inference cache hit for ${contentHash}`);
@@ -51,16 +72,23 @@ function inferPropsFromTSX(tsxContent, contentHash) {
   }
 
   try {
-    // Use synchronous import for typescript
-    const typescript = projectRequire("typescript");
+    const typescript = loadTypeScript();
+    if (!typescript) {
+      return [];
+    }
     
-    // Parse TSX source
+    // Determine script kind based on extension
+    const scriptKind = extension === 'jsx' 
+      ? typescript.ScriptKind.JSX 
+      : typescript.ScriptKind.TSX;
+
+    // Parse source
     const sourceFile = typescript.createSourceFile(
-      "component.tsx",
-      tsxContent,
+      `component.${extension}`,
+      content,
       typescript.ScriptTarget.Latest,
       true,
-      typescript.ScriptKind.TSX
+      scriptKind
     );
 
     const keys = [];
@@ -424,7 +452,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // Props inference endpoint
-  // Request: { tsxContent, contentHash }
+  // Request: { tsxContent, contentHash, extension }
   // Response: { keys: [...] }
   if (req.method === "POST" && req.url === "/infer-props") {
     let body = "";
@@ -435,7 +463,7 @@ const server = http.createServer(async (req, res) => {
 
     req.on("end", async () => {
       try {
-        const { tsxContent, contentHash } = JSON.parse(body);
+        const { tsxContent, contentHash, extension } = JSON.parse(body);
 
         if (!tsxContent) {
           res.writeHead(400, { "Content-Type": "application/json" });
@@ -443,7 +471,7 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        const keys = inferPropsFromTSX(tsxContent, contentHash);
+        const keys = inferProps(tsxContent, contentHash, extension || 'tsx');
 
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ keys }));

@@ -12,8 +12,8 @@ RSpec.describe ReactiveViews::Renderer do
       config.enabled = true
       config.ssr_url = 'http://localhost:5175'
       config.ssr_timeout = 5
-      config.component_views_paths = ['app/views/components']
-      config.component_js_paths = ['app/javascript/components']
+      config.component_views_paths = [ 'app/views/components' ]
+      config.component_js_paths = [ 'app/javascript/components' ]
     end
   end
 

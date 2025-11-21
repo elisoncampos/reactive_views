@@ -24,7 +24,7 @@ module ReactiveViewsHelper
         vite_base = begin
           ViteRuby.config.public_output_dir
         rescue StandardError
-          'vite-dev'
+          "vite-dev"
         end
 
         preamble = <<~JS
@@ -34,15 +34,15 @@ module ReactiveViewsHelper
           window.$RefreshSig$ = () => (type) => type;
           window.__vite_plugin_react_preamble_installed__ = true;
         JS
-        output << content_tag(:script, preamble.html_safe, type: 'module')
+        output << content_tag(:script, preamble.html_safe, type: "module")
       end
     rescue StandardError => e
-      log_helper_error('react_refresh_preamble', e) if respond_to?(:log_helper_error, true)
+      log_helper_error("react_refresh_preamble", e) if respond_to?(:log_helper_error, true)
     end
 
     # Include the Vite JavaScript entrypoint
     # The boot script is imported in application.js and bundled by Vite
-    output << vite_javascript_tag('application') if respond_to?(:vite_javascript_tag)
+    output << vite_javascript_tag("application") if respond_to?(:vite_javascript_tag)
 
     safe_join(output, "\n")
   end
@@ -50,11 +50,11 @@ module ReactiveViewsHelper
   # @deprecated Use {#reactive_views_script_tag} instead.
   # This helper is maintained for backward compatibility but will be removed in future versions.
   def reactive_views_boot
-    warn '[DEPRECATION] `reactive_views_boot` is deprecated. Please use `reactive_views_script_tag` instead.'
+    warn "[DEPRECATION] `reactive_views_boot` is deprecated. Please use `reactive_views_script_tag` instead."
     javascript_include_tag(
-      ReactiveViews.config.boot_module_path || '/vite/assets/reactive_views_boot.js',
+      ReactiveViews.config.boot_module_path || "/vite/assets/reactive_views_boot.js",
       defer: true,
-      crossorigin: 'anonymous'
+      crossorigin: "anonymous"
     )
   end
 

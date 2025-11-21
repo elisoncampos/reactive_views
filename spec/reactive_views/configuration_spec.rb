@@ -16,11 +16,11 @@ RSpec.describe ReactiveViews::Configuration do
     end
 
     it 'has default component views paths' do
-      expect(config.component_views_paths).to eq(['app/views/components'])
+      expect(config.component_views_paths).to eq([ 'app/views/components' ])
     end
 
     it 'has default component js paths' do
-      expect(config.component_js_paths).to eq(['app/javascript/components'])
+      expect(config.component_js_paths).to eq([ 'app/javascript/components' ])
     end
 
     it 'has default SSR timeout' do

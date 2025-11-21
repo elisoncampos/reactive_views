@@ -10,21 +10,23 @@ RSpec.describe 'TSX ERB partial composition', type: :request do
     # Clear view lookup context before creating templates
     ActionView::LookupContext::DetailsKey.clear if defined?(ActionView::LookupContext::DetailsKey)
 
-    FileUtils.mkdir_p(users_views)
+    FileUtils.mkdir_p(users_views) unless Dir.exist?(users_views)
 
     # Enable full-page rendering
     ReactiveViews.configure do |config|
       config.full_page_enabled = true
       config.enabled = true
       config.props_inference_enabled = false # Keep it simple for this test
+      config.ssr_url = 'http://localhost:5175'
     end
 
     # Create a test controller using stub_const (same approach as full_page_rendering_spec)
     stub_const('UsersController', Class.new(ActionController::Base) do
       include ReactiveViewsHelper
+      prepend_view_path Rails.root.join('app', 'views')
 
       def index
-        @users = [{ id: 1, name: 'Alice' }, { id: 2, name: 'Bob' }]
+        @users = [ { id: 1, name: 'Alice' }, { id: 2, name: 'Bob' } ]
         render :index
       end
 
@@ -46,12 +48,15 @@ RSpec.describe 'TSX ERB partial composition', type: :request do
     # Clean up
     Rails.application.reload_routes!
     ActionView::LookupContext::DetailsKey.clear if defined?(ActionView::LookupContext::DetailsKey)
-    FileUtils.rm_rf(users_views)
+    # Do not remove users_views as they are needed for other tests
   end
 
   describe 'partial composition in .tsx.erb templates' do
     it 'evaluates ERB first and composes TSX with partial before SSR' do
-      # Create the partial
+      # Note: Files are already created in spec/dummy/app/views/users by setup
+      # But we can overwrite them if needed or just assert on existing ones
+
+      # Ensure partial content matches expectations
       partial_path = users_views.join('_filters.tsx.erb')
       File.write(partial_path, <<~TSX)
         export function UsersFilters() {
@@ -59,7 +64,7 @@ RSpec.describe 'TSX ERB partial composition', type: :request do
         }
       TSX
 
-      # Create the main template that uses the partial
+      # Ensure index content matches expectations
       index_path = users_views.join('index.tsx.erb')
       File.write(index_path, <<~TSX)
         <%= render "users/filters" %>
@@ -79,36 +84,26 @@ RSpec.describe 'TSX ERB partial composition', type: :request do
         }
       TSX
 
-      # Stub infer-props
-      stub_request(:post, 'http://localhost:5175/infer-props')
-        .to_return(status: 200, body: { keys: ['users'] }.to_json)
-
-      # Intercept SSR call and assert the generated TSX file includes the partial content
       rendered_source = nil
-      stub_request(:post, 'http://localhost:5175/render').to_return do |request|
-        payload = JSON.parse(request.body)
-        tsx_path = payload['componentPath']
-        source = File.read(tsx_path)
-        rendered_source = source
-
-        # Verify that ERB was processed and partial was included
-        expect(source).to include('export function UsersFilters()')
-        expect(source).to include('<UsersFilters />')
-
-        { status: 200, body: { html: '<div>SSR OK</div>' }.to_json }
+      allow(ReactiveViews::Renderer).to receive(:render_path).and_wrap_original do |method, path, props|
+        rendered_source = File.read(path)
+        method.call(path, props)
       end
 
       get '/users'
 
       expect(response).to have_http_status(:ok)
       expect(rendered_source).not_to be_nil
-      expect(response.body).to include('SSR OK')
+      expect(rendered_source).to include('export function UsersFilters()')
+      expect(rendered_source).to include('<UsersFilters />')
+      expect(response.body).to include('Filters Section')
+      expect(response.body).to include('Users List')
     end
   end
 
   describe 'content_for in .tsx.erb templates' do
     it 'evaluates content_for blocks and passes yielded content as props' do
-      # Create the template with content_for
+      # Ensure show content matches expectations
       File.write(users_views.join('show.tsx.erb'), <<~TSX)
         <% content_for :page_title, @page_title %>
         <% content_for :meta_description, "User profile for \#{@user[:name]}" %>
@@ -133,25 +128,19 @@ RSpec.describe 'TSX ERB partial composition', type: :request do
         }
       TSX
 
-      # Stub infer-props
-      stub_request(:post, 'http://localhost:5175/infer-props')
-        .to_return(status: 200, body: { keys: %w[user page_title] }.to_json)
-
-      # Intercept SSR call
-      stub_request(:post, 'http://localhost:5175/render').to_return do |request|
-        payload = JSON.parse(request.body)
-        props = payload['props']
-
-        # Verify content_for was processed and included in props
-        expect(props['page_title']).to eq('User Profile')
-
-        { status: 200, body: { html: '<div>User Profile Rendered</div>' }.to_json }
+      captured_props = nil
+      allow(ReactiveViews::Renderer).to receive(:render_path).and_wrap_original do |method, path, props|
+        captured_props = props
+        method.call(path, props)
       end
 
       get '/users/1'
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include('User Profile Rendered')
+      expect(response.body).to include('User Profile')
+      expect(response.body).to include('Software Developer')
+      expect(captured_props).to include(:page_title)
+      expect(captured_props[:page_title]).to eq('User Profile')
     end
   end
 end

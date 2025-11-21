@@ -112,7 +112,7 @@ RSpec.describe 'Tree Rendering Integration', type: :request do
 
       stub_request(:post, 'http://localhost:5175/batch-render')
         .to_return(status: 200, body: {
-          results: [{ html: '<div>Empty component</div>' }]
+          results: [ { html: '<div>Empty component</div>' } ]
         }.to_json)
 
       html = '<Empty />'
