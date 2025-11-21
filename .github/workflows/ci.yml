@@ -14,7 +14,6 @@ jobs:
       CI: true
       RV_VITE_PORT: 5174
       RV_SSR_PORT: 5175
-      REACTIVE_VIEWS_SKIP_SERVERS: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -35,9 +34,46 @@ jobs:
       - name: Install NPM dependencies
         run: |
           npm ci
+          cd spec/dummy && npm ci
 
       - name: Run unit specs
-        run: bundle exec rspec --tag ~type:system
+        run: |
+          set -euo pipefail
+
+          node node/ssr/server.mjs &
+          SSR_PID=$!
+          echo "SSR server started with PID ${SSR_PID}"
+
+          pushd spec/dummy >/dev/null
+          npx vite --config vite.test.config.ts &
+          VITE_PID=$!
+          echo "Vite server started with PID ${VITE_PID}"
+          popd >/dev/null
+
+          cleanup() {
+            echo "Stopping background servers..."
+            kill ${SSR_PID} ${VITE_PID} || true
+          }
+          trap cleanup EXIT
+
+          wait_for() {
+            local url="$1"
+            echo "Waiting for ${url}..."
+            for attempt in $(seq 1 60); do
+              if curl -fsS "${url}" >/dev/null 2>&1; then
+                echo "${url} is ready"
+                return 0
+              fi
+              sleep 1
+            done
+            echo "Timed out waiting for ${url}" >&2
+            exit 1
+          }
+
+          wait_for "http://localhost:${RV_SSR_PORT}/health"
+          wait_for "http://localhost:${RV_VITE_PORT}"
+
+          bundle exec rspec --tag ~type:system
 
   system:
     needs: unit
