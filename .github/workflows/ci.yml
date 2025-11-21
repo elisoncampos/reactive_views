@@ -73,6 +73,22 @@ jobs:
           wait_for "http://localhost:${RV_SSR_PORT}/health"
           wait_for "http://localhost:${RV_VITE_PORT}/@vite/client"
 
+          warm_up_ssr() {
+            local component_path="$1"
+            echo "Warming up SSR server with ${component_path}..."
+            local payload
+            payload=$(node -e "console.log(JSON.stringify({ componentPath: process.argv[1], props: { initialCount: 0 } }))" "${component_path}")
+
+            curl -fsS -X POST "http://localhost:${RV_SSR_PORT}/render" \
+              -H "Content-Type: application/json" \
+              -d "${payload}" >/dev/null
+
+            echo "SSR warm-up complete"
+          }
+
+          SSR_WARMUP_COMPONENT="$(pwd)/spec/dummy/app/views/components/Counter.tsx"
+          warm_up_ssr "${SSR_WARMUP_COMPONENT}"
+
           bundle exec rspec --tag ~type:system
 
   system:
@@ -145,5 +161,21 @@ jobs:
 
           wait_for "http://localhost:${RV_SSR_PORT}/health"
           wait_for "http://localhost:${RV_VITE_PORT}/@vite/client"
+
+          warm_up_ssr() {
+            local component_path="$1"
+            echo "Warming up SSR server with ${component_path}..."
+            local payload
+            payload=$(node -e "console.log(JSON.stringify({ componentPath: process.argv[1], props: { initialCount: 0 } }))" "${component_path}")
+
+            curl -fsS -X POST "http://localhost:${RV_SSR_PORT}/render" \
+              -H "Content-Type: application/json" \
+              -d "${payload}" >/dev/null
+
+            echo "SSR warm-up complete"
+          }
+
+          SSR_WARMUP_COMPONENT="$(pwd)/spec/dummy/app/views/components/Counter.tsx"
+          warm_up_ssr "${SSR_WARMUP_COMPONENT}"
 
           bundle exec rspec spec/system
