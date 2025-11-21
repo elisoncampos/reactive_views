@@ -47,6 +47,8 @@ RSpec.describe 'Props inference integration', type: :request do
       }
     TSX
 
+    allow(ReactiveViews::PropsInference).to receive(:infer_props).and_return(%w[users current_user]) if ENV['REACTIVE_VIEWS_SKIP_SERVERS'] == '1'
+
     captured_props = nil
     allow(ReactiveViews::Renderer).to receive(:render_path).and_wrap_original do |method, path, props|
       captured_props = props.transform_keys(&:to_s)
