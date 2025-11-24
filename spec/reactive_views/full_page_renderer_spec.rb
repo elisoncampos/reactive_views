@@ -30,11 +30,13 @@ RSpec.describe ReactiveViews::FullPageRenderer do
   let(:template_path) { '/path/to/template.tsx.erb' }
   let(:tsx_content) { 'export default function Page({ users }) { return <div />; }' }
   let(:temp_file) { ReactiveViews::TempFileManager::TempFile.new('/tmp/reactive_views_full_page/page.tsx') }
+  let(:bundle_result) { { html: '<div>SSR</div>', bundle_key: 'bundle-123' } }
 
   before do
     ReactiveViews.configure do |config|
       config.enabled = true
       config.props_inference_enabled = true
+      config.ssr_url = 'http://ssr.test:5175'
     end
 
     allow(File).to receive(:read).with(template_path).and_return('export default function() {}')
@@ -42,6 +44,7 @@ RSpec.describe ReactiveViews::FullPageRenderer do
 
     allow(ReactiveViews::TempFileManager).to receive(:write).and_return(temp_file)
     allow(temp_file).to receive(:delete)
+    allow(SecureRandom).to receive(:uuid).and_return('test-uuid')
   end
 
   describe '.render' do
@@ -52,12 +55,20 @@ RSpec.describe ReactiveViews::FullPageRenderer do
       allow(mock_template).to receive(:render).and_return(tsx_content)
 
       allow(ReactiveViews::PropsInference).to receive(:infer_props).and_return([ 'users' ])
-      allow(ReactiveViews::Renderer).to receive(:render_path).and_return('<div>SSR</div>')
+      allow(ReactiveViews::Renderer).to receive(:render_path_with_metadata).and_return(bundle_result)
 
       result = described_class.render(controller_double, template_full_path: template_path)
 
-      expect(result).to eq('<div>SSR</div>')
-      expect(ReactiveViews::Renderer).to have_received(:render_path).with(
+      expect(result).to include('data-reactive-page="true"')
+      expect(result).to include('data-page-uuid="test-uuid"')
+      expect(result).to include('<div data-reactive-page="true" data-page-uuid="test-uuid"><div>SSR</div></div>')
+
+      script_match = result.match(/<script type="application\/json" data-page-uuid="test-uuid">(.*?)<\/script>/)
+      expect(script_match).to be_present
+      metadata = JSON.parse(script_match[1])
+      expect(metadata['bundle']).to eq('bundle-123')
+      expect(metadata['props']).to include('users')
+      expect(ReactiveViews::Renderer).to have_received(:render_path_with_metadata).with(
         temp_file.path,
         hash_including(users: [ { id: 1, name: 'Alice' } ])
       )
@@ -78,9 +89,9 @@ RSpec.describe ReactiveViews::FullPageRenderer do
       allow(ReactiveViews::PropsInference).to receive(:infer_props).and_return([ 'users' ])
 
       received_props = nil
-      allow(ReactiveViews::Renderer).to receive(:render_path) do |_path, props|
+      allow(ReactiveViews::Renderer).to receive(:render_path_with_metadata) do |_path, props|
         received_props = props
-        '<div />'
+        { html: '<div />', bundle_key: 'bundle-123' }
       end
 
       described_class.render(controller_double, template_full_path: template_path)
@@ -109,7 +120,7 @@ RSpec.describe ReactiveViews::FullPageRenderer do
       end
 
       allow(ReactiveViews::PropsInference).to receive(:infer_props).and_return([])
-      allow(ReactiveViews::Renderer).to receive(:render_path).and_return('<div />')
+      allow(ReactiveViews::Renderer).to receive(:render_path_with_metadata).and_return(bundle_result)
 
       described_class.render(controller_double, template_full_path: template_path)
 

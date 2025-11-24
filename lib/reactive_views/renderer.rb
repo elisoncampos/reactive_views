@@ -116,7 +116,13 @@ module ReactiveViews
           return cached
         end
 
-        html = make_ssr_request(component_path, props, component_name: component_name)
+        result = make_ssr_request(
+          component_path,
+          props,
+          component_name: component_name,
+          include_metadata: false
+        )
+        html = result["html"] || ""
 
         cache_store.write(cache_key, html, ttl: ttl) if ttl
         html
@@ -131,9 +137,37 @@ module ReactiveViews
       def render_path(component_path, props = {})
         return "" unless ReactiveViews.config.enabled
 
-        make_ssr_request(component_path, props, component_name: component_path)
+        result = make_ssr_request(
+          component_path,
+          props,
+          component_name: component_path,
+          include_metadata: false
+        )
+        result["html"] || ""
       rescue StandardError => e
         handle_error(component_path, props, e)
+      end
+
+      # Render path and return HTML + metadata (used for full-page hydration)
+      def render_path_with_metadata(component_path, props = {})
+        return { html: "", bundle_key: nil } unless ReactiveViews.config.enabled
+
+        result = make_ssr_request(
+          component_path,
+          props,
+          component_name: component_path,
+          include_metadata: true
+        )
+
+        {
+          html: result["html"] || "",
+          bundle_key: result["bundleKey"]
+        }
+      rescue StandardError => e
+        {
+          html: handle_error(component_path, props, e),
+          bundle_key: nil
+        }
       end
 
       # Batch render multiple components in a single SSR request.
@@ -198,18 +232,22 @@ module ReactiveViews
         "#{component_name}:#{props.to_json}"
       end
 
-      def make_ssr_request(component_path, props, component_name:)
+      def make_ssr_request(component_path, props, component_name:, include_metadata:)
         response = http_client.post_json(
           "/render",
           body: { componentPath: component_path, props: props },
-          headers: metadata_headers(component_name: component_name, component_path: component_path),
+          headers: metadata_headers(
+            component_name: component_name,
+            component_path: component_path,
+            extra: { "X-Reactive-Views-Metadata" => include_metadata ? "true" : "false" }
+          ),
           timeout: request_timeouts(:render)
         )
 
         result = parse_response_body(response)
         raise RenderError, result["error"] if result["error"]
 
-        result["html"] || ""
+        result
       rescue JSON::ParserError => e
         raise RenderError, "Invalid JSON response from SSR server: #{e.message}"
       rescue Errno::ECONNREFUSED

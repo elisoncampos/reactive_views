@@ -19,4 +19,9 @@ class TestController < ActionController::Base
   def counter
     @initial_count = 5
   end
+
+  def hooks_playground
+    @tsx_initial = 3
+    @jsx_initial = 2
+  end
 end

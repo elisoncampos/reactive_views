@@ -4,6 +4,7 @@ import http from "http";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import fs from "fs";
+import crypto from "crypto";
 import { createRequire } from "module";
 
 // Configuration from environment
@@ -13,7 +14,7 @@ const NODE_ENV = process.env.NODE_ENV || "development";
 const IS_DEV = NODE_ENV === "development";
 
 // Determine project root (when run via rake task, cwd should be the Rails app)
-const PROJECT_ROOT = process.cwd();
+const PROJECT_ROOT = process.env.PROJECT_ROOT || process.cwd();
 
 // Create a require function that resolves from the project root
 // This allows us to import packages installed in the Rails app's node_modules
@@ -23,6 +24,173 @@ const esbuild = await import(projectRequire.resolve("esbuild"));
 // Resolve React and ReactDOM from the project
 const reactPath = projectRequire.resolve("react");
 const reactDomServerPath = projectRequire.resolve("react-dom/server");
+
+function writeDevLog(message) {
+  if (!IS_DEV) return;
+  try {
+    const logPath = join(PROJECT_ROOT, "tmp", "reactive_views_ssr.log");
+    fs.appendFileSync(logPath, `${new Date().toISOString()} ${message}\n`);
+  } catch (_error) {
+    // ignore logging errors
+  }
+}
+
+const reactShimSource = `
+const root = typeof globalThis !== "undefined" ? globalThis : window;
+const globalRV = root.__REACTIVE_VIEWS__ || (root.__REACTIVE_VIEWS__ = {});
+const target = globalRV.react || root.React;
+if (!target) {
+  throw new Error("[ReactiveViews] React global not found for full-page hydration");
+}
+
+function cloneProps(props, key) {
+  if (key === undefined || key === null) {
+    return props ?? {};
+  }
+  return { ...(props || {}), key };
+}
+
+function createJsx(type, props, key) {
+  return target.createElement(type, cloneProps(props, key));
+}
+
+function createJsxDev(type, props, key, _isStaticChildren, source, self) {
+  const finalProps = cloneProps(props, key);
+  if (source) finalProps.__source = source;
+  if (self) finalProps.__self = self;
+  return target.createElement(type, finalProps);
+}
+
+export default target;
+export const Children = target.Children;
+export const Component = target.Component;
+export const Fragment = target.Fragment;
+export const StrictMode = target.StrictMode;
+export const Suspense = target.Suspense;
+export const Profiler = target.Profiler;
+export const createElement = target.createElement;
+export const createContext = target.createContext;
+export const createRef = target.createRef;
+export const forwardRef = target.forwardRef;
+export const lazy = target.lazy;
+export const memo = target.memo;
+export const startTransition = target.startTransition;
+export const useState = target.useState;
+export const useEffect = target.useEffect;
+export const useMemo = target.useMemo;
+export const useCallback = target.useCallback;
+export const useReducer = target.useReducer;
+export const useRef = target.useRef;
+export const useLayoutEffect = target.useLayoutEffect;
+export const useTransition = target.useTransition;
+export const useDeferredValue = target.useDeferredValue;
+export const useImperativeHandle = target.useImperativeHandle;
+export const useInsertionEffect = target.useInsertionEffect;
+export const useId = target.useId;
+export const useSyncExternalStore = target.useSyncExternalStore;
+export const useDebugValue = target.useDebugValue;
+export const useContext = target.useContext;
+export const useActionState = target.useActionState || ((fn, initial) => [fn(initial), () => {}]);
+export const useOptimistic = target.useOptimistic || ((initial) => [initial, () => {}]);
+export const version = target.version;
+export const __SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED = target.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
+export { createJsx as jsx, createJsx as jsxs, createJsxDev as jsxDEV };
+`;
+
+const jsxRuntimeShimSource = `
+const root = typeof globalThis !== "undefined" ? globalThis : window;
+const globalRV = root.__REACTIVE_VIEWS__ || (root.__REACTIVE_VIEWS__ = {});
+const target = globalRV.react || root.React;
+if (!target) {
+  throw new Error("[ReactiveViews] React global not found for full-page hydration");
+}
+
+function cloneProps(props, key) {
+  if (key === undefined || key === null) {
+    return props ?? {};
+  }
+  return { ...(props || {}), key };
+}
+
+function createJsx(type, props, key) {
+  return target.createElement(type, cloneProps(props, key));
+}
+
+export const Fragment = target.Fragment;
+export const jsx = createJsx;
+export const jsxs = createJsx;
+export default { Fragment, jsx, jsxs };
+`;
+
+const jsxDevRuntimeShimSource = `
+const root = typeof globalThis !== "undefined" ? globalThis : window;
+const globalRV = root.__REACTIVE_VIEWS__ || (root.__REACTIVE_VIEWS__ = {});
+const target = globalRV.react || root.React;
+if (!target) {
+  throw new Error("[ReactiveViews] React global not found for full-page hydration");
+}
+
+function cloneProps(props, key) {
+  if (key === undefined || key === null) {
+    return props ?? {};
+  }
+  return { ...(props || {}), key };
+}
+
+function createJsx(type, props, key) {
+  return target.createElement(type, cloneProps(props, key));
+}
+
+function createJsxDev(type, props, key, _isStaticChildren, source, self) {
+  const finalProps = cloneProps(props, key);
+  if (source) finalProps.__source = source;
+  if (self) finalProps.__self = self;
+  return target.createElement(type, finalProps);
+}
+
+export const Fragment = target.Fragment;
+export const jsx = createJsx;
+export const jsxs = createJsx;
+export const jsxDEV = createJsxDev;
+export default { Fragment, jsx, jsxs, jsxDEV };
+`;
+
+const reactShimPlugin = {
+  name: "reactive-views-react-shim",
+  setup(build) {
+    const namespace = "rv-react-shim";
+
+    build.onResolve({ filter: /^react$/ }, () => ({
+      path: "react-shim",
+      namespace,
+    }));
+
+    build.onResolve({ filter: /^react\/jsx-runtime$/ }, () => ({
+      path: "react-jsx-runtime-shim",
+      namespace,
+    }));
+
+    build.onResolve({ filter: /^react\/jsx-dev-runtime$/ }, () => ({
+      path: "react-jsx-dev-runtime-shim",
+      namespace,
+    }));
+
+    build.onLoad({ filter: /^react-shim$/, namespace }, () => ({
+      contents: reactShimSource,
+      loader: "js",
+    }));
+
+    build.onLoad({ filter: /^react-jsx-runtime-shim$/, namespace }, () => ({
+      contents: jsxRuntimeShimSource,
+      loader: "js",
+    }));
+
+    build.onLoad({ filter: /^react-jsx-dev-runtime-shim$/, namespace }, () => ({
+      contents: jsxDevRuntimeShimSource,
+      loader: "js",
+    }));
+  },
+};
 
 console.log(`[ReactiveViews SSR] Starting server...`);
 console.log(`[ReactiveViews SSR] Project root: ${PROJECT_ROOT}`);
@@ -192,31 +360,37 @@ const PropsInference = (() => {
 const Bundler = (() => {
   const cache = new Map();
   const pending = new Map();
+  const bundleKeyIndex = new Map();
   const MAX_ENTRIES = parseInt(process.env.RV_SSR_BUNDLE_CACHE || "20", 10);
+
+  function encodeBundleKey(cacheKey) {
+    return crypto.createHash("sha1").update(cacheKey).digest("hex");
+  }
 
   function cacheKeyFor(componentPath) {
     const stats = fs.statSync(componentPath);
     return `${componentPath}:${stats.mtimeMs}:${NODE_ENV}`;
   }
 
-  async function loadComponent(componentPath) {
+  async function loadBundle(componentPath) {
     const key = cacheKeyFor(componentPath);
     const cached = cache.get(key);
     if (cached) {
       cached.lastUsed = Date.now();
-      return cached.component;
+      return cached;
     }
 
     if (pending.has(key)) {
       const bundle = await pending.get(key);
       bundle.lastUsed = Date.now();
-      return bundle.component;
+      return bundle;
     }
 
     const buildPromise = bundleComponent(componentPath, key)
       .then((bundle) => {
         removeExistingEntries(componentPath, key);
         cache.set(key, bundle);
+        bundleKeyIndex.set(bundle.bundleKey, key);
         pruneCache();
         pending.delete(key);
         return bundle;
@@ -228,7 +402,7 @@ const Bundler = (() => {
 
     pending.set(key, buildPromise);
     const bundle = await buildPromise;
-    return bundle.component;
+    return bundle;
   }
 
   async function bundleComponent(componentPath, cacheKey) {
@@ -237,38 +411,47 @@ const Bundler = (() => {
       fs.mkdirSync(tempDir, { recursive: true });
     }
 
-    const entryFile = join(
+    const normalizedPath = componentPath.replace(/\\/g, "/");
+    const nodeEntryFile = join(
       tempDir,
       `entry_${Date.now()}_${Math.random().toString(36).slice(2)}.cjs`
     );
-    const outFile = entryFile.replace(".cjs", ".out.cjs");
+    const browserEntryFile = nodeEntryFile.replace(
+      ".cjs",
+      ".browser-entry.jsx"
+    );
+    const nodeOutFile = nodeEntryFile.replace(".cjs", ".out.cjs");
+    const browserOutFile = nodeEntryFile.replace(".cjs", ".browser.js");
 
-    const normalizedPath = componentPath.replace(/\\/g, "/");
-    const entryContent = `
+    const nodeEntryContent = `
 const React = require('react');
 const Component = require('${normalizedPath}').default || require('${normalizedPath}');
-
 exports.default = Component;
 `;
 
-    fs.writeFileSync(entryFile, entryContent);
+    const browserEntryContent = `
+import ComponentModule from '${normalizedPath}';
+const Component = ComponentModule.default || ComponentModule;
+export default Component;
+`;
+
+    fs.writeFileSync(nodeEntryFile, nodeEntryContent);
+    fs.writeFileSync(browserEntryFile, browserEntryContent);
 
     try {
       await esbuild.build({
-        entryPoints: [entryFile],
+        entryPoints: [nodeEntryFile],
         bundle: true,
         format: "cjs",
         platform: "node",
-        outfile: outFile,
+        outfile: nodeOutFile,
         external: [
           "react",
           "react-dom",
           "react/jsx-runtime",
           "react/jsx-dev-runtime",
         ],
-        jsx: "transform",
-        jsxFactory: "React.createElement",
-        jsxFragment: "React.Fragment",
+        jsx: "automatic",
         loader: {
           ".tsx": "tsx",
           ".ts": "ts",
@@ -278,24 +461,46 @@ exports.default = Component;
         logLevel: "warning",
       });
 
+      await esbuild.build({
+        entryPoints: [browserEntryFile],
+        bundle: true,
+        format: "esm",
+        platform: "browser",
+        outfile: browserOutFile,
+        jsx: "automatic",
+        loader: {
+          ".tsx": "tsx",
+          ".ts": "ts",
+          ".jsx": "jsx",
+          ".js": "jsx",
+        },
+        logLevel: "warning",
+        plugins: [reactShimPlugin],
+      });
+
       const React = projectRequire("react");
       global.React = React;
-      delete projectRequire.cache[projectRequire.resolve(outFile)];
-      const Component = projectRequire(outFile).default;
+      delete projectRequire.cache[projectRequire.resolve(nodeOutFile)];
+      const Component = projectRequire(nodeOutFile).default;
       delete global.React;
 
-      safeUnlink(entryFile);
+      safeUnlink(nodeEntryFile);
+      safeUnlink(browserEntryFile);
 
       return {
         component: Component,
         componentPath,
         cacheKey,
-        bundlePath: outFile,
+        bundlePath: nodeOutFile,
+        browserBundlePath: browserOutFile,
+        bundleKey: encodeBundleKey(cacheKey),
         lastUsed: Date.now(),
       };
     } catch (error) {
-      safeUnlink(entryFile);
-      safeUnlink(outFile);
+      safeUnlink(nodeEntryFile);
+      safeUnlink(browserEntryFile);
+      safeUnlink(nodeOutFile);
+      safeUnlink(browserOutFile);
       throw error;
     }
   }
@@ -305,6 +510,9 @@ exports.default = Component;
       if (entry.componentPath === componentPath && key !== currentKey) {
         cleanupBundle(entry);
         cache.delete(key);
+        if (entry.bundleKey) {
+          bundleKeyIndex.delete(entry.bundleKey);
+        }
       }
     }
   }
@@ -328,6 +536,9 @@ exports.default = Component;
       if (oldestKey) {
         const entry = cache.get(oldestKey);
         cleanupBundle(entry);
+        if (entry.bundleKey) {
+          bundleKeyIndex.delete(entry.bundleKey);
+        }
         cache.delete(oldestKey);
       } else {
         break;
@@ -338,6 +549,9 @@ exports.default = Component;
   function cleanupBundle(entry) {
     if (entry?.bundlePath && fs.existsSync(entry.bundlePath)) {
       safeUnlink(entry.bundlePath);
+    }
+    if (entry?.browserBundlePath && fs.existsSync(entry.browserBundlePath)) {
+      safeUnlink(entry.browserBundlePath);
     }
   }
 
@@ -357,27 +571,39 @@ exports.default = Component;
       cleanupBundle(entry);
     }
     cache.clear();
+    bundleKeyIndex.clear();
   }
 
-  return { loadComponent, clear };
+  function getBundleByKey(bundleKey) {
+    const cacheKey = bundleKeyIndex.get(bundleKey);
+    if (!cacheKey) {
+      return null;
+    }
+    return cache.get(cacheKey) || null;
+  }
+
+  return { loadBundle, getBundleByKey, clear };
 })();
 
 // Render a component using React's server-side rendering
-async function renderComponent(componentPath, props) {
+async function renderComponent(componentPath, props, options = {}) {
+  const { includeMetadata = false } = options;
   if (!fs.existsSync(componentPath)) {
     throw new Error(`Component file not found: ${componentPath}`);
   }
 
   console.log(`[ReactiveViews SSR] Rendering component from ${componentPath}`);
 
-  const Component = await Bundler.loadComponent(componentPath);
+  const bundle = await Bundler.loadBundle(componentPath);
+  const Component = bundle.component;
   const React = projectRequire("react");
   const { renderToString } = projectRequire("react-dom/server");
 
   global.React = React;
   try {
     const element = React.createElement(Component, props);
-    return renderToString(element);
+    const html = renderToString(element);
+    return includeMetadata ? { html, bundleKey: bundle.bundleKey } : { html };
   } finally {
     delete global.React;
   }
@@ -396,10 +622,10 @@ async function renderComponentTree(treeSpec) {
   try {
     // Build the React element tree
     const element = await buildReactTree(treeSpec, React);
-    
+
     // Render the entire tree as one
     const html = renderToString(element);
-    
+
     return html;
   } finally {
     // Clean up global
@@ -420,7 +646,8 @@ async function buildReactTree(treeSpec, React) {
   console.log(`[ReactiveViews SSR] Building tree for ${componentPath}`);
 
   // Bundle and load the component
-  const Component = await Bundler.loadComponent(componentPath);
+  const bundle = await Bundler.loadBundle(componentPath);
+  const Component = bundle.component;
 
   // Build child React elements in parallel (siblings render in parallel)
   const childElements = children?.length
@@ -429,7 +656,7 @@ async function buildReactTree(treeSpec, React) {
 
   // Combine React elements with HTML children
   let allChildren = [...childElements];
-  
+
   // If there's HTML content, add it as a dangerously set inner HTML element
   // This preserves mixed content like <Component><div>foo</div><AnotherComponent /></Component>
   if (htmlChildren && htmlChildren.trim()) {
@@ -490,7 +717,6 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
-
 const Router = {
   async handle(req, res) {
     this.addCors(res);
@@ -504,6 +730,11 @@ const Router = {
     try {
       if (req.method === "GET" && req.url === "/health") {
         sendJson(res, 200, { status: "ok", version: "1.0.0" });
+        return;
+      }
+
+      if (req.method === "GET" && req.url.startsWith("/full-page-bundles/")) {
+        await this.handleBundleRequest(req, res);
         return;
       }
 
@@ -571,8 +802,8 @@ const Router = {
             return { error: "Missing componentPath" };
           }
 
-          const html = await renderComponent(componentPath, props || {});
-          return { html };
+          const result = await renderComponent(componentPath, props || {});
+          return { html: result.html };
         } catch (error) {
           console.error(
             `[ReactiveViews SSR] Error rendering ${componentPath}:`,
@@ -607,8 +838,60 @@ const Router = {
       throw new HttpError(400, "Missing componentPath");
     }
 
-    const html = await renderComponent(componentPath, props || {});
-    sendJson(res, 200, { html });
+    const includeMetadata =
+      req.headers["x-reactive-views-metadata"] === "true" ||
+      req.headers["x-reactive-views-metadata"] === "1";
+    const result = await renderComponent(componentPath, props || {}, {
+      includeMetadata,
+    });
+    if (includeMetadata) {
+      sendJson(res, 200, {
+        html: result.html,
+        bundleKey: result.bundleKey,
+      });
+      return;
+    }
+
+    sendJson(res, 200, { html: result.html });
+  },
+
+  async handleBundleRequest(req, res) {
+    const requestPath = req.url.split("?")[0];
+    if (!requestPath.startsWith("/full-page-bundles/")) {
+      sendJson(res, 400, { error: "Invalid bundle request" });
+      return;
+    }
+
+    const rawKey = requestPath.replace("/full-page-bundles/", "");
+    const bundleKey = rawKey.endsWith(".js")
+      ? rawKey.slice(0, rawKey.length - 3)
+      : rawKey;
+
+    const bundle = Bundler.getBundleByKey(bundleKey);
+    writeDevLog(`bundle_request ${bundleKey}`);
+    if (!bundle || !bundle.browserBundlePath) {
+      writeDevLog(`bundle_miss ${bundleKey}`);
+      sendJson(res, 404, { error: "Bundle not found" });
+      return;
+    }
+
+    if (!fs.existsSync(bundle.browserBundlePath)) {
+      writeDevLog(`bundle_file_missing ${bundleKey}`);
+      sendJson(res, 404, { error: "Bundle not available" });
+      return;
+    }
+
+    res.writeHead(200, {
+      "Content-Type": "application/javascript",
+      "Cache-Control": "no-store",
+    });
+
+    const stream = fs.createReadStream(bundle.browserBundlePath);
+    stream.on("error", (error) => {
+      this.handleError(res, error);
+    });
+    stream.pipe(res);
+    writeDevLog(`bundle_served ${bundleKey}`);
   },
 
   handleError(res, error) {

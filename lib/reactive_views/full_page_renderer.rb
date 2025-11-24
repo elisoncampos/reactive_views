@@ -1,8 +1,13 @@
 # frozen_string_literal: true
 
+require "json"
+require "erb"
+
 module ReactiveViews
   # Renders full-page TSX.ERB templates via ERB→TSX→SSR pipeline
   class FullPageRenderer
+    require "securerandom"
+
     class << self
       # Render a full-page TSX.ERB template
       #
@@ -36,7 +41,13 @@ module ReactiveViews
 
         props = PropsBuilder.build(controller.view_context, sanitized_content, extension: extension)
 
-        Renderer.render_path(temp_file.path, props)
+        render_result = Renderer.render_path_with_metadata(temp_file.path, props)
+        html = render_result[:html]
+        bundle_key = render_result[:bundle_key]
+
+        return html if bundle_key.nil?
+
+        wrap_with_hydration(html, props, bundle_key)
       ensure
         temp_file&.delete
       end
@@ -116,6 +127,20 @@ module ReactiveViews
         return source unless source.include?("<!--")
 
         source.gsub(/<!--\s*(BEGIN|END)\s+app\/views.*?-->\s*/m, "")
+      end
+
+      def wrap_with_hydration(html, props, bundle_key)
+        uuid = SecureRandom.uuid
+        metadata = {
+          props: props || {},
+          bundle: bundle_key
+        }
+        metadata_json = JSON.generate(metadata).gsub("</", "<\\/")
+
+        container = %(<div data-reactive-page="true" data-page-uuid="#{uuid}">#{html}</div>)
+        props_script = %(<script type="application/json" data-page-uuid="#{uuid}">#{metadata_json}</script>)
+
+        "#{container}#{props_script}"
       end
     end
   end

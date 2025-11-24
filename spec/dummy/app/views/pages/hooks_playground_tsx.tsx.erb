@@ -1,0 +1,22 @@
+import HooksPlayground from '<%= Rails.root.join("app", "views", "components", "HooksPlayground.tsx") %>';
+
+type Props = {
+  page_title: string;
+  initial_count: number;
+  initial_label: string;
+};
+
+export default function HooksPlaygroundPage({ page_title, initial_count, initial_label }: Props) {
+  return (
+    <main>
+      <div className="card">
+        <h1>{page_title}</h1>
+        <p>This full page demonstrates every core React hook running inside a TSX template.</p>
+      </div>
+      <div className="card">
+        <HooksPlayground initialCount={initial_count} initialLabel={initial_label} testId="tsx-full-page" />
+      </div>
+    </main>
+  );
+}
+

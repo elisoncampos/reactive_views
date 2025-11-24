@@ -7,8 +7,41 @@ type IslandSpec = {
   el: Element;
 };
 
+type ReactiveViewsGlobal = {
+  react?: typeof React;
+  hydrateRoot?: typeof hydrateRoot;
+  ssrUrl?: string;
+  hydratedPages?: string[];
+};
+
+declare global {
+  interface Window {
+    __REACTIVE_VIEWS__?: ReactiveViewsGlobal;
+  }
+}
+
+const globalRV: ReactiveViewsGlobal = (window.__REACTIVE_VIEWS__ ||= {});
+globalRV.react = React;
+globalRV.hydrateRoot = hydrateRoot;
+globalRV.hydratedPages ||= [];
+
 function readProps(uuid: string) {
   const script = document.querySelector(`script[type="application/json"][data-island-uuid="${uuid}"]`);
+  if (!script) return {};
+  try {
+    return JSON.parse(script.textContent || '{}');
+  } catch (_e) {
+    return {};
+  }
+}
+
+type PageMetadata = {
+  props?: Record<string, unknown>;
+  bundle?: string;
+};
+
+function readPageMetadata(uuid: string): PageMetadata {
+  const script = document.querySelector(`script[type="application/json"][data-page-uuid="${uuid}"]`);
   if (!script) return {};
   try {
     return JSON.parse(script.textContent || '{}');
@@ -86,7 +119,49 @@ async function loadComponent(name: string) {
   throw new Error(`Component not found on client: ${name}`);
 }
 
-async function hydrateAll() {
+function resolveSsrUrl() {
+  if (globalRV.ssrUrl) return globalRV.ssrUrl.replace(/\/$/, '');
+  const meta = document.querySelector('meta[name="reactive-views-ssr-url"]');
+  if (meta?.getAttribute('content')) {
+    return meta.getAttribute('content')!.replace(/\/$/, '');
+  }
+  return 'http://localhost:5175';
+}
+
+async function hydrateFullPages() {
+  const nodes = Array.from(document.querySelectorAll<HTMLElement>('[data-reactive-page="true"]'));
+  for (const node of nodes) {
+    const uuid = node.dataset.pageUuid;
+    if (!uuid) continue;
+
+    const metadata = readPageMetadata(uuid);
+    if (!metadata.bundle) continue;
+
+    const ssrUrl = resolveSsrUrl();
+    const moduleUrl = `${ssrUrl}/full-page-bundles/${metadata.bundle}.js`;
+
+    try {
+      if (import.meta.env?.DEV) {
+        console.log(`[reactive_views] Hydrating full page bundle: ${metadata.bundle}`);
+      }
+      const mod = await import(/* @vite-ignore */ moduleUrl);
+      const Comp = mod.default || mod.Component || mod;
+      hydrateRoot(node, React.createElement(Comp, metadata.props || {}));
+      if (import.meta.env?.DEV) {
+        console.log(`[reactive_views] Hydrated full page bundle ${metadata.bundle}`);
+      }
+      globalRV.hydratedPages!.push(uuid);
+      node.dataset.reactiveHydrated = "true";
+    } catch (e) {
+      if (import.meta.env?.DEV) {
+        console.error(`[reactive_views] Failed to hydrate full page bundle: ${metadata.bundle}`, e);
+      }
+      globalRV.lastPageError = e instanceof Error ? e.stack : String(e);
+    }
+  }
+}
+
+async function hydrateIslands() {
   const nodes = Array.from(document.querySelectorAll('[data-island-uuid][data-component]'));
   for (const node of nodes) {
     const el = node as HTMLElement;
@@ -103,6 +178,11 @@ async function hydrateAll() {
       }
     }
   }
+}
+
+async function hydrateAll() {
+  await hydrateFullPages();
+  await hydrateIslands();
 }
 
 if (document.readyState === 'loading') {

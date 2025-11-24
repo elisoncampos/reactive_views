@@ -91,5 +91,34 @@ RSpec.describe 'Client-side Hydration', :js, type: :system do
         puts "Warning: Could not retrieve browser logs: #{e.message}"
       end
     end
+
+    it 'hydrates a TSX page without importing React globally' do
+      visit '/pages/auto_runtime'
+
+      expect(page).to have_css('[data-testid="auto-runtime-page"]', wait: 10)
+      expect(page).to have_content('Hydration Playground', wait: 10)
+      expect(page).to have_content('Count: 16', wait: 10)
+
+      begin
+        Timeout.timeout(5) do
+          if page.driver.browser.respond_to?(:logs)
+            logs = page.driver.browser.logs.get(:browser)
+            reference_errors = logs.select do |log|
+              log.level == 'SEVERE' && log.message.include?('React is not defined')
+            end
+
+            expect(reference_errors).to be_empty,
+                                       "Expected no 'React is not defined' errors, but found:\n#{reference_errors.map(&:message).join("\n")}"
+          end
+        end
+      rescue Timeout::Error
+        puts 'Warning: Browser logs API timed out, continuing test'
+      rescue StandardError => e
+        puts "Warning: Could not retrieve browser logs: #{e.message}"
+      end
+
+      find('[data-testid="auto-runtime-increment"]', wait: 10).click
+      expect(page).to have_content('Count: 17', wait: 10)
+    end
   end
 end

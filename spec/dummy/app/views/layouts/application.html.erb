@@ -55,6 +55,9 @@
 </head>
 <body>
   <%= yield %>
+  <div id="layout-hooks">
+    <%= yield :layout_hooks if content_for?(:layout_hooks) %>
+  </div>
 </body>
 </html>
 

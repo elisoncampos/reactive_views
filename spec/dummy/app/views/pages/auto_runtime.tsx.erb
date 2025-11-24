@@ -1,0 +1,26 @@
+import { useState } from 'react';
+
+type Props = {
+  name: string;
+  counter: number;
+};
+
+export default function AutoRuntimePage({ name, counter }: Props) {
+  const [count, setCount] = useState(counter ?? 0);
+
+  return (
+    <main data-testid="auto-runtime-page">
+      <div className="card">
+        <h1>{name}</h1>
+        <p data-testid="auto-runtime-count">Count: {count}</p>
+        <button
+          data-testid="auto-runtime-increment"
+          onClick={() => setCount((value) => value + 1)}
+        >
+          Increment
+        </button>
+      </div>
+    </main>
+  );
+}
+

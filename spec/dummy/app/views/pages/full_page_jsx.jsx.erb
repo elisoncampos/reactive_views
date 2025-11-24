@@ -1,0 +1,32 @@
+import { useEffect, useState } from 'react';
+
+const FullPageJsx = ({ page_title, initial_count, effect_label }) => {
+  const [count, setCount] = useState(initial_count);
+  const [effectState, setEffectState] = useState(effect_label);
+
+  useEffect(() => {
+    setEffectState('hydrated');
+  }, []);
+
+  return (
+    <main data-testid="full-page-jsx">
+      <div className="card">
+        <h1>{page_title}</h1>
+        <p data-testid="page-count">Count: {count}</p>
+        <p data-testid="page-effect-state">Effect: {effectState}</p>
+        <div>
+          <button data-testid="page-increment" onClick={() => setCount(count + 1)}>
+            Increment
+          </button>
+          <button data-testid="page-reset" onClick={() => setCount(initial_count)}>
+            Reset
+          </button>
+        </div>
+      </div>
+    </main>
+  );
+};
+
+export default FullPageJsx;
+
+

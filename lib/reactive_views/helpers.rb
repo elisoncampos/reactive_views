@@ -13,6 +13,9 @@ module ReactiveViewsHelper
   def reactive_views_script_tag
     output = []
 
+    # Advertise SSR URL for the client runtime once
+    output << tag.meta(name: "reactive-views-ssr-url", content: ReactiveViews.config.ssr_url)
+
     # Include Vite client tag for HMR in development
     output << vite_client_tag if respond_to?(:vite_client_tag)
 

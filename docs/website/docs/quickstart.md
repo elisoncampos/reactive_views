@@ -94,6 +94,10 @@ end
 
 `FullPageRenderer` renders the ERB portion to TSX, writes it via `TempFileManager`, infers props, and calls the renderer just like your islands.
 
+### Bonus: Verifying hooks/hydration
+
+Need to prove that first-party React hooks behave the same inside islands, layouts, and full-page TSX/JSX templates? The dummy app ships a shared `HooksPlayground` component that runs through `useState`, `useEffect`, `useReducer`, `useMemo`, `useCallback`, `useRef`, and `useLayoutEffect` in all three contexts (`/hooks_playground`, `/pages/hooks_playground_tsx`, `/pages/hooks_playground_jsx`, `/pages/layout_hooks`). See `spec/system/hooks_playground_spec.rb` for an end-to-end example.
+
 ## 6. Dev workflow
 
 ```bash

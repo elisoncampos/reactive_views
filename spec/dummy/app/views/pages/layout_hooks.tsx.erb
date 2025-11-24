@@ -1,0 +1,26 @@
+<% content_for :layout_hooks do %>
+  <HooksPlayground initialCount="<%= @layout_initial %>" initialLabel="layout-slot" testId="layout-hooks" />
+<% end %>
+
+import HooksPlayground from '<%= Rails.root.join("app", "views", "components", "HooksPlayground.tsx") %>';
+
+type Props = {
+  initial_count: number;
+  initial_label: string;
+};
+
+export default function LayoutHooksPage({ initial_count, initial_label }: Props) {
+  return (
+    <main>
+      <div className="card">
+        <h1>Layout & Page Hooks</h1>
+        <p>The layout renders its own HooksPlayground island while this page renders another.</p>
+      </div>
+      <div className="card">
+        <HooksPlayground initialCount={initial_count} initialLabel={initial_label} testId="layout-page-hooks" />
+      </div>
+    </main>
+  );
+}
+
+

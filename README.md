@@ -44,7 +44,7 @@ ReactiveViews aims to provide a better developer experience than current alterna
 - **Client-Side Hydration Islands**: Automatic hydration of React components on the client with minimal overhead
 - **Batch Rendering**: Render multiple components in a single SSR request for improved performance
 - **Tree Rendering**: Support for nested component composition with true React component trees
-- **Full-Page TSX.ERB Rendering**: Write entire pages in TypeScript/JSX with ERB evaluation and Rails partials
+- **Full-Page TSX.ERB Rendering + Hydration**: Write entire pages in TypeScript/JSX with ERB evaluation and Rails partials, then hydrate them with the same hooks you rely on in a standalone React app
 - **Automatic Props Inference**: TypeScript AST parsing extracts required props from component signatures, ensuring only necessary data is sent to SSR
 - **Component Caching**: Configurable TTL-based caching for rendered components
 - **Flexible Component Naming**: Supports PascalCase, snake_case, camelCase, and kebab-case naming conventions
@@ -230,6 +230,16 @@ export default function UsersPage({ users, page_title, current_user }: Props) {
 ```
 
 Rails automatically detects the missing `.html.erb` template and renders the `.tsx.erb` template instead. Props are automatically inferred from the TypeScript component signature.
+
+### Debugging Hooks & Hydration
+
+Need to prove that `useState`, `useEffect`, `useMemo`, and friends work across layouts, islands, and full-page TSX/JSX templates? The spec suite ships a shared `HooksPlayground` component (TSX + JSX versions) that is reused in three contexts:
+
+- As a regular island rendered from ERB (`/hooks_playground`)
+- Inside full-page TSX + JSX templates (`/pages/hooks_playground_tsx`, `/pages/hooks_playground_jsx`)
+- Injected into the layout via `content_for` (`/pages/layout_hooks`)
+
+The accompanying system spec (`spec/system/hooks_playground_spec.rb`) exercises every React default hook to catch hydration regressions and to ensure props sourced from Rails are honored as initial hook values.
 
 ## Contributing
 
