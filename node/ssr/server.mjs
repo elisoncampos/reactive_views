@@ -94,6 +94,12 @@ export const useActionState = target.useActionState || ((fn, initial) => [fn(ini
 export const useOptimistic = target.useOptimistic || ((initial) => [initial, () => {}]);
 export const version = target.version;
 export const __SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED = target.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
+export const isValidElement = target.isValidElement;
+export const cloneElement = target.cloneElement;
+export const PureComponent = target.PureComponent;
+export const createFactory = target.createFactory;
+export const use = target.use;
+export const cache = target.cache;
 export { createJsx as jsx, createJsx as jsxs, createJsxDev as jsxDEV };
 `;
 
