@@ -52,7 +52,7 @@ module ReactiveViews
           return ErrorOverlay.generate_fullscreen(
             component_name: component_name,
             props: props,
-            errors: [{ message: error_message }]
+            errors: [ { message: error_message } ]
           )
         end
 

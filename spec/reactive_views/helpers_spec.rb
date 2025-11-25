@@ -47,9 +47,10 @@ RSpec.describe ReactiveViewsHelper, type: :helper do
         allow(helper).to receive(:respond_to?).with(:vite_javascript_tag).and_return(false)
       end
 
-      it 'returns empty safe string when methods not available' do
+      it 'returns only SSR meta tag when vite methods not available' do
         result = helper.reactive_views_script_tag
-        expect(result).to eq(''.html_safe)
+        expect(result).to include('reactive-views-ssr-url')
+        expect(result).not_to include('vite')
       end
 
       it 'does not raise errors' do

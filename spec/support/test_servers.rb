@@ -2,6 +2,7 @@
 
 require 'net/http'
 require 'uri'
+require 'json'
 
 module TestServers
   VITE_PORT = 5174
@@ -99,6 +100,39 @@ module TestServers
         end
 
         sleep 0.5
+      end
+
+      # Warm up the SSR server by pre-compiling commonly used components
+      warmup_ssr(url) if url.include?(SSR_PORT.to_s)
+    end
+
+    def warmup_ssr(ssr_url)
+      # Pre-compile a few components to warm up the bundler cache
+      warmup_components = %w[
+        Counter.tsx
+        InteractiveCounter.tsx
+        HooksPlayground.tsx
+        HooksPlaygroundJsx.jsx
+      ]
+
+      warmup_components.each do |component|
+        component_path = File.join(SPEC_DUMMY_DIR, 'app', 'views', 'components', component)
+        next unless File.exist?(component_path)
+
+        begin
+          uri = URI.parse("#{ssr_url}/render")
+          http = Net::HTTP.new(uri.host, uri.port)
+          http.open_timeout = 30
+          http.read_timeout = 30
+
+          request = Net::HTTP::Post.new(uri.request_uri)
+          request['Content-Type'] = 'application/json'
+          request.body = JSON.generate({ componentPath: component_path, props: {} })
+
+          http.request(request)
+        rescue StandardError
+          # Ignore warmup errors - test will catch real issues
+        end
       end
     end
   end

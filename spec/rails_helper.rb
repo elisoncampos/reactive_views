@@ -80,4 +80,10 @@ RSpec.configure do |config|
     driven_by :cuprite
     host! 'http://127.0.0.1:3000'
   end
+
+  # Clear renderer cache and give SSR server breathing room between system tests
+  config.before(:each, type: :system, js: true) do
+    ReactiveViews::Renderer.clear_cache if ReactiveViews::Renderer.respond_to?(:clear_cache)
+    sleep 0.25 # Pause to let SSR server recover between tests
+  end
 end

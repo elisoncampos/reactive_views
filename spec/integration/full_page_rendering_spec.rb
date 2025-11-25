@@ -63,11 +63,10 @@ RSpec.describe 'Full-page TSX.ERB rendering', type: :request do
         }
       TSX
 
-      if ENV['REACTIVE_VIEWS_SKIP_SERVERS'] == '1'
-        allow(ReactiveViews::Renderer).to receive(:render_path).and_return(
-          '<main><h1>Users List</h1><ul><li>Alice</li><li>Bob</li></ul></main>'
-        )
-      end
+      # Always stub SSR for integration tests - temp templates aren't in Vite's build pipeline
+      allow(ReactiveViews::Renderer).to receive(:render_path_with_metadata).and_return(
+        { html: '<main><h1>Users List</h1><ul><li>Alice</li><li>Bob</li></ul></main>', bundle_key: nil }
+      )
 
       get '/users'
 
@@ -91,16 +90,10 @@ RSpec.describe 'Full-page TSX.ERB rendering', type: :request do
 
       captured_props = nil
 
-      if ENV['REACTIVE_VIEWS_SKIP_SERVERS'] == '1'
-        allow(ReactiveViews::Renderer).to receive(:render_path) do |_path, props|
-          captured_props = props
-          '<div><h1>All Users</h1><p>Count: 2</p></div>'
-        end
-      else
-        allow(ReactiveViews::Renderer).to receive(:render_path).and_wrap_original do |method, path, props|
-          captured_props = props
-          method.call(path, props)
-        end
+      # Always stub SSR for integration tests - temp templates aren't in Vite's build pipeline
+      allow(ReactiveViews::Renderer).to receive(:render_path_with_metadata) do |_path, props|
+        captured_props = props
+        { html: '<div><h1>All Users</h1><p>Count: 2</p></div>', bundle_key: nil }
       end
 
       get '/users'
@@ -149,16 +142,10 @@ RSpec.describe 'Full-page TSX.ERB rendering', type: :request do
 
       captured_props = nil
 
-      if ENV['REACTIVE_VIEWS_SKIP_SERVERS'] == '1'
-        allow(ReactiveViews::Renderer).to receive(:render_path) do |_path, props|
-          captured_props = props
-          '<div><p>Welcome, Admin User</p><p>Users: 2</p></div>'
-        end
-      else
-        allow(ReactiveViews::Renderer).to receive(:render_path).and_wrap_original do |method, path, props|
-          captured_props = props
-          method.call(path, props)
-        end
+      # Always stub SSR for integration tests - temp templates aren't in Vite's build pipeline
+      allow(ReactiveViews::Renderer).to receive(:render_path_with_metadata) do |_path, props|
+        captured_props = props
+        { html: '<div><p>Welcome, Admin User</p><p>Users: 2</p></div>', bundle_key: nil }
       end
 
       get '/users'

@@ -5,6 +5,9 @@ ReactiveViews.configure do |config|
   config.full_page_enabled = true
   config.props_inference_enabled = true
   config.ssr_url = 'http://localhost:5175'
+  # Increase timeout for test environment (bundling can take longer under load)
+  config.ssr_timeout = 30
+  config.batch_timeout = 45
   config.component_views_paths = [
     Rails.root.join('app', 'views', 'components').to_s
   ]

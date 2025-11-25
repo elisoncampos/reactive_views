@@ -86,16 +86,10 @@ RSpec.describe 'TSX ERB partial composition', type: :request do
 
       rendered_source = nil
 
-      if ENV['REACTIVE_VIEWS_SKIP_SERVERS'] == '1'
-        allow(ReactiveViews::Renderer).to receive(:render_path) do |path, _props|
-          rendered_source = File.read(path)
-          '<main><h1>Users List</h1><section id="filters">Filters Section</section></main>'
-        end
-      else
-        allow(ReactiveViews::Renderer).to receive(:render_path).and_wrap_original do |method, path, props|
-          rendered_source = File.read(path)
-          method.call(path, props)
-        end
+      # Always stub SSR for integration tests - temp templates aren't in Vite's build pipeline
+      allow(ReactiveViews::Renderer).to receive(:render_path_with_metadata) do |path, _props|
+        rendered_source = File.read(path)
+        { html: '<main><h1>Users List</h1><section id="filters">Filters Section</section></main>', bundle_key: nil }
       end
 
       get '/users'
@@ -138,24 +132,18 @@ RSpec.describe 'TSX ERB partial composition', type: :request do
 
       captured_props = nil
 
-      if ENV['REACTIVE_VIEWS_SKIP_SERVERS'] == '1'
-        allow(ReactiveViews::Renderer).to receive(:render_path) do |_path, props|
-          captured_props = props
-          <<~HTML
-            <main>
-              <h1>User Profile</h1>
-              <div class="user-profile">
-                <h2>Alice</h2>
-                <p>Software Developer</p>
-              </div>
-            </main>
-          HTML
-        end
-      else
-        allow(ReactiveViews::Renderer).to receive(:render_path).and_wrap_original do |method, path, props|
-          captured_props = props
-          method.call(path, props)
-        end
+      # Always stub SSR for integration tests - temp templates aren't in Vite's build pipeline
+      allow(ReactiveViews::Renderer).to receive(:render_path_with_metadata) do |_path, props|
+        captured_props = props
+        { html: <<~HTML, bundle_key: nil }
+          <main>
+            <h1>User Profile</h1>
+            <div class="user-profile">
+              <h2>Alice</h2>
+              <p>Software Developer</p>
+            </div>
+          </main>
+        HTML
       end
 
       get '/users/1'

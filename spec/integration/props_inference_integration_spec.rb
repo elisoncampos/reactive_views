@@ -47,20 +47,14 @@ RSpec.describe 'Props inference integration', type: :request do
       }
     TSX
 
-    allow(ReactiveViews::PropsInference).to receive(:infer_props).and_return(%w[users current_user]) if ENV['REACTIVE_VIEWS_SKIP_SERVERS'] == '1'
+    # Always stub for integration tests - temp templates aren't in Vite's build pipeline
+    allow(ReactiveViews::PropsInference).to receive(:infer_props).and_return(%w[users current_user])
 
     captured_props = nil
 
-    if ENV['REACTIVE_VIEWS_SKIP_SERVERS'] == '1'
-      allow(ReactiveViews::Renderer).to receive(:render_path) do |_path, props|
-        captured_props = props.transform_keys(&:to_s)
-        '<div>Users: 1 - Admin</div>'
-      end
-    else
-      allow(ReactiveViews::Renderer).to receive(:render_path).and_wrap_original do |method, path, props|
-        captured_props = props.transform_keys(&:to_s)
-        method.call(path, props)
-      end
+    allow(ReactiveViews::Renderer).to receive(:render_path_with_metadata) do |_path, props|
+      captured_props = props.transform_keys(&:to_s)
+      { html: '<div>Users: 1 - Admin</div>', bundle_key: nil }
     end
 
     get '/users'
