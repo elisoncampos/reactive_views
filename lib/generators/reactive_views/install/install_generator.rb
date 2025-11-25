@@ -414,8 +414,48 @@ module ReactiveViews
                 exit 1
               end
 
+              # Find node executable - check common version managers
+              node_path = find_node_executable
+              if node_path.nil?
+                puts "Error: Could not find node executable."
+                puts "Make sure Node.js is installed and available in your PATH."
+                puts "If using asdf/nvm, ensure your shell profile is loaded."
+                exit 1
+              end
+
               puts "Starting ReactiveViews SSR server..."
-              exec("node", ssr_script)
+              exec(node_path, ssr_script)
+            end
+
+            def find_node_executable
+              # First try direct exec (works if PATH is set correctly)
+              node_in_path = \`which node 2>/dev/null\`.strip
+              return node_in_path unless node_in_path.empty?
+
+              # Try common asdf location
+              asdf_node = File.expand_path("~/.asdf/shims/node")
+              return asdf_node if File.executable?(asdf_node)
+
+              # Try common nvm locations
+              nvm_dir = ENV["NVM_DIR"] || File.expand_path("~/.nvm")
+              if Dir.exist?(nvm_dir)
+                # Find the default or current node version
+                nvm_node = Dir.glob("\#{nvm_dir}/versions/node/*/bin/node").max
+                return nvm_node if nvm_node && File.executable?(nvm_node)
+              end
+
+              # Try Homebrew locations (macOS)
+              brew_node = "/opt/homebrew/bin/node"
+              return brew_node if File.executable?(brew_node)
+
+              brew_node_intel = "/usr/local/bin/node"
+              return brew_node_intel if File.executable?(brew_node_intel)
+
+              # Try volta
+              volta_node = File.expand_path("~/.volta/bin/node")
+              return volta_node if File.executable?(volta_node)
+
+              nil
             end
           end
         RAKE

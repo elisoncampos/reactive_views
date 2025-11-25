@@ -35,67 +35,80 @@ function writeDevLog(message) {
   }
 }
 
-const reactShimSource = `
-const root = typeof globalThis !== "undefined" ? globalThis : window;
-const globalRV = root.__REACTIVE_VIEWS__ || (root.__REACTIVE_VIEWS__ = {});
-const target = globalRV.react || root.React;
-if (!target) {
-  throw new Error("[ReactiveViews] React global not found for full-page hydration");
-}
+const identifierRegexp = /^[$A-Z_][0-9A-Z_$]*$/i;
 
-function cloneProps(props, key) {
-  if (key === undefined || key === null) {
-    return props ?? {};
+function collectReactExportNames(reactModule) {
+  if (!reactModule || typeof reactModule !== "object") {
+    return [];
   }
-  return { ...(props || {}), key };
+  return Object.keys(reactModule)
+    .filter((key) => key !== "default" && key !== "__esModule")
+    .sort();
 }
 
-function createJsx(type, props, key) {
-  return target.createElement(type, cloneProps(props, key));
+const REACT_EXPORT_FALLBACKS = {
+  useActionState:
+    "target.useActionState || ((fn, initial) => [fn(initial), () => {}])",
+  useOptimistic: "target.useOptimistic || ((initial) => [initial, () => {}])",
+};
+
+function buildReactShimSource(reactExportNames) {
+  const lines = [
+    `const root = typeof globalThis !== "undefined" ? globalThis : window;`,
+    `const globalRV = root.__REACTIVE_VIEWS__ || (root.__REACTIVE_VIEWS__ = {});`,
+    `const target = globalRV.react || root.React;`,
+    `if (!target) {`,
+    `  throw new Error("[ReactiveViews] React global not found for full-page hydration");`,
+    `}`,
+    ``,
+    `function cloneProps(props, key) {`,
+    `  if (key === undefined || key === null) {`,
+    `    return props ?? {};`,
+    `  }`,
+    `  return { ...(props || {}), key };`,
+    `}`,
+    ``,
+    `function createJsx(type, props, key) {`,
+    `  return target.createElement(type, cloneProps(props, key));`,
+    `}`,
+    ``,
+    `function createJsxDev(type, props, key, _isStaticChildren, source, self) {`,
+    `  const finalProps = cloneProps(props, key);`,
+    `  if (source) finalProps.__source = source;`,
+    `  if (self) finalProps.__self = self;`,
+    `  return target.createElement(type, finalProps);`,
+    `}`,
+    ``,
+    `export default target;`,
+  ];
+
+  for (const name of reactExportNames) {
+    if (REACT_EXPORT_FALLBACKS[name]) {
+      continue;
+    }
+    if (!identifierRegexp.test(name)) {
+      continue;
+    }
+    lines.push(`export const ${name} = target.${name};`);
+  }
+
+  for (const [name, expression] of Object.entries(REACT_EXPORT_FALLBACKS)) {
+    if (!identifierRegexp.test(name)) {
+      continue;
+    }
+    lines.push(`export const ${name} = ${expression};`);
+  }
+
+  lines.push(
+    `export { createJsx as jsx, createJsx as jsxs, createJsxDev as jsxDEV };`
+  );
+
+  return lines.join("\n");
 }
 
-function createJsxDev(type, props, key, _isStaticChildren, source, self) {
-  const finalProps = cloneProps(props, key);
-  if (source) finalProps.__source = source;
-  if (self) finalProps.__self = self;
-  return target.createElement(type, finalProps);
-}
-
-export default target;
-export const Children = target.Children;
-export const Component = target.Component;
-export const Fragment = target.Fragment;
-export const StrictMode = target.StrictMode;
-export const Suspense = target.Suspense;
-export const Profiler = target.Profiler;
-export const createElement = target.createElement;
-export const createContext = target.createContext;
-export const createRef = target.createRef;
-export const forwardRef = target.forwardRef;
-export const lazy = target.lazy;
-export const memo = target.memo;
-export const startTransition = target.startTransition;
-export const useState = target.useState;
-export const useEffect = target.useEffect;
-export const useMemo = target.useMemo;
-export const useCallback = target.useCallback;
-export const useReducer = target.useReducer;
-export const useRef = target.useRef;
-export const useLayoutEffect = target.useLayoutEffect;
-export const useTransition = target.useTransition;
-export const useDeferredValue = target.useDeferredValue;
-export const useImperativeHandle = target.useImperativeHandle;
-export const useInsertionEffect = target.useInsertionEffect;
-export const useId = target.useId;
-export const useSyncExternalStore = target.useSyncExternalStore;
-export const useDebugValue = target.useDebugValue;
-export const useContext = target.useContext;
-export const useActionState = target.useActionState || ((fn, initial) => [fn(initial), () => {}]);
-export const useOptimistic = target.useOptimistic || ((initial) => [initial, () => {}]);
-export const version = target.version;
-export const __SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED = target.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
-export { createJsx as jsx, createJsx as jsxs, createJsxDev as jsxDEV };
-`;
+const reactModule = projectRequire("react");
+const reactExportNames = collectReactExportNames(reactModule);
+const reactShimSource = buildReactShimSource(reactExportNames);
 
 const jsxRuntimeShimSource = `
 const root = typeof globalThis !== "undefined" ? globalThis : window;

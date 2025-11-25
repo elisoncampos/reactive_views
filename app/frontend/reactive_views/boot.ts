@@ -12,6 +12,7 @@ type ReactiveViewsGlobal = {
   hydrateRoot?: typeof hydrateRoot;
   ssrUrl?: string;
   hydratedPages?: string[];
+  lastPageError?: string;
 };
 
 declare global {

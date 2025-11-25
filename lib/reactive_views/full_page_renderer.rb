@@ -45,6 +45,17 @@ module ReactiveViews
         html = render_result[:html]
         bundle_key = render_result[:bundle_key]
 
+        # Check for error marker and show fullscreen overlay in development
+        if html.to_s.start_with?("___REACTIVE_VIEWS_ERROR___")
+          error_message = html.sub("___REACTIVE_VIEWS_ERROR___", "").sub(/___\z/, "")
+          component_name = identifier ? File.basename(identifier.to_s, ".*") : "FullPage"
+          return ErrorOverlay.generate_fullscreen(
+            component_name: component_name,
+            props: props,
+            errors: [{ message: error_message }]
+          )
+        end
+
         return html if bundle_key.nil?
 
         wrap_with_hydration(html, props, bundle_key)
