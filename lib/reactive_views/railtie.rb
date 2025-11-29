@@ -70,19 +70,20 @@ module ReactiveViews
           def transform_reactive_views_components
             yield
 
+            # Skip transformation for redirects (3xx responses)
+            # This prevents interference with redirect_to calls in rescue_from handlers
+            return if response.redirect?
+
             # Only transform HTML responses
             if response.content_type&.include?("text/html") && response.body.present?
-              response.body = ReactiveViews::TagTransformer.transform(response.body)
+              begin
+                response.body = ReactiveViews::TagTransformer.transform(response.body)
+              rescue StandardError => e
+                # Log transformation errors but don't break the response
+                Rails.logger&.error("[ReactiveViews] Transformation error: #{e.message}")
+                Rails.logger&.error(e.backtrace.join("\n")) if e.backtrace
+              end
             end
-          rescue StandardError => e
-            # Don't catch template-related exceptions - let them bubble up
-            raise if e.is_a?(ActionView::MissingTemplate) ||
-                     e.is_a?(ActionController::UnknownFormat) ||
-                     e.is_a?(ActionController::MissingExactTemplate)
-
-            # Log error but don't break the response
-            Rails.logger&.error("[ReactiveViews] Transformation error: #{e.message}")
-            Rails.logger.error(e.backtrace.join("\n")) if Rails.logger && e.backtrace
           end
         end
       end
