@@ -15,6 +15,10 @@ gem "puma", ">= 5.0"
 # Vite Rails
 gem "vite_rails"
 
+# Hotwire - Turbo and Stimulus for Rails 8
+gem "turbo-rails"
+gem "stimulus-rails"
+
 # Reactive Views (local)
 gem "reactive_views", path: "../../"
 

@@ -1,6 +1,19 @@
 import React from 'react';
 import { hydrateRoot } from 'react-dom/client';
 
+// Import Turbo and Stimulus for Rails 8 compatibility testing
+import "@hotwired/turbo-rails";
+import { Application } from "@hotwired/stimulus";
+
+// Import Stimulus controllers
+import HelloController from "./controllers/hello_controller";
+import CounterController from "./controllers/counter_controller";
+
+// Initialize Stimulus
+const application = Application.start();
+application.register("hello", HelloController);
+application.register("counter", CounterController);
+
 type IslandSpec = {
   id: string;
   component: string;
@@ -127,6 +140,9 @@ async function hydrateFullPages() {
     const uuid = node.dataset.pageUuid;
     if (!uuid) continue;
 
+    // Skip if already hydrated
+    if (node.dataset.reactiveHydrated === 'true') continue;
+
     const metadata = readPageMetadata(uuid);
     if (!metadata.bundle) continue;
 
@@ -154,6 +170,10 @@ async function hydrateIslands() {
   
   for (const node of nodes) {
     const el = node as HTMLElement;
+    
+    // Skip if already hydrated
+    if (el.dataset.reactiveHydrated === 'true') continue;
+    
     const uuid = el.dataset.islandUuid!;
     const component = el.dataset.component!;
     console.log(`[reactive_views] Hydrating component: ${component} (uuid: ${uuid})`);
@@ -163,6 +183,7 @@ async function hydrateIslands() {
       const props = readProps(uuid);
       console.log(`[reactive_views] Props for ${component}:`, props);
       hydrateRoot(el, React.createElement(Comp, props));
+      el.dataset.reactiveHydrated = 'true';
       console.log(`[reactive_views] Successfully hydrated: ${component}`);
     } catch (e) {
       console.error(`[reactive_views] Failed to hydrate component: ${component}`, e);
@@ -176,9 +197,15 @@ async function hydrateAll() {
   await hydrateIslands();
 }
 
+// Initial hydration
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', hydrateAll);
 } else {
   hydrateAll();
 }
+
+// Turbo integration: re-hydrate after Turbo navigations
+// This ensures React components work correctly with Turbo Drive and Turbo Frames
+document.addEventListener('turbo:load', hydrateAll);
+document.addEventListener('turbo:frame-load', hydrateAll);
 

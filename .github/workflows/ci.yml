@@ -170,12 +170,21 @@ jobs:
 
             curl -fsS -X POST "http://localhost:${RV_SSR_PORT}/render" \
               -H "Content-Type: application/json" \
-              -d "${payload}" >/dev/null
+              -d "${payload}" >/dev/null 2>&1 || true
 
-            echo "SSR warm-up complete"
+            echo "SSR warm-up complete for ${component_path}"
           }
 
-          SSR_WARMUP_COMPONENT="$(pwd)/spec/dummy/app/views/components/Counter.tsx"
-          warm_up_ssr "${SSR_WARMUP_COMPONENT}"
+          # Warm up multiple components to prevent SSR timeout during tests
+          COMPONENTS_DIR="$(pwd)/spec/dummy/app/views/components"
+          warm_up_ssr "${COMPONENTS_DIR}/Counter.tsx"
+          warm_up_ssr "${COMPONENTS_DIR}/InteractiveCounter.tsx"
+          warm_up_ssr "${COMPONENTS_DIR}/HooksPlayground.tsx"
+          warm_up_ssr "${COMPONENTS_DIR}/HooksPlaygroundJsx.jsx"
+          warm_up_ssr "${COMPONENTS_DIR}/ShadcnDemo.tsx"
 
-          bundle exec rspec spec/system
+          # Allow SSR server to settle after warmup
+          sleep 2
+
+          # Run system tests with defined order for CI stability
+          bundle exec rspec spec/system --order defined

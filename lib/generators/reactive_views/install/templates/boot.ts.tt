@@ -58,11 +58,21 @@ function toPath(name: string): string {
   return parts.map(snake).join('/');
 }
 
+// =============================================================================
+// Component Path Configuration
+// These paths are configured during installation. To change them:
+// 1. Update the glob patterns below
+// 2. Update the normalization paths to match
+// 3. Update the bases array in loadComponent
+// =============================================================================
+
 // Import all components eagerly so they are available for hydration
-const rawComponentsFromViews = import.meta.glob('../../views/components/**/*.{tsx,jsx,ts,js}', { 
+// Views components path: <%= component_views_path %>
+const rawComponentsFromViews = import.meta.glob('<%= component_views_glob %>', { 
   eager: true,
 });
-const rawComponentsFromJs = import.meta.glob('../components/**/*.{tsx,jsx,ts,js}', { 
+// JavaScript components path: <%= component_js_path %>
+const rawComponentsFromJs = import.meta.glob('<%= component_js_glob %>', { 
   eager: true,
 });
 
@@ -71,12 +81,12 @@ const componentsFromViews: Record<string, any> = {};
 const componentsFromJs: Record<string, any> = {};
 
 for (const [path, module] of Object.entries(rawComponentsFromViews)) {
-  const normalized = path.replace('../../views/components/', '/app/views/components/');
+  const normalized = path.replace('<%= component_views_glob_prefix %>', '/<%= component_views_path %>/');
   componentsFromViews[normalized] = (module as any).default;
 }
 
 for (const [path, module] of Object.entries(rawComponentsFromJs)) {
-  const normalized = path.replace('../components/', '/app/javascript/components/');
+  const normalized = path.replace('<%= component_js_glob_prefix %>', '/<%= component_js_path %>/');
   componentsFromJs[normalized] = (module as any).default;
 }
 
@@ -84,7 +94,7 @@ async function loadComponent(name: string) {
   // Attempt both conventional locations; try multiple filename shapes and extensions
   const rel = toPath(name);
   const leaf = rel.split('/').pop() as string;
-  const bases = ['/app/views/components', '/app/javascript/components'];
+  const bases = ['/<%= component_views_path %>', '/<%= component_js_path %>'];
   const exts = ['.tsx', '.jsx', '.ts', '.js'];
 
   // Combine both glob maps
@@ -183,7 +193,7 @@ async function hydrateIslands() {
     } catch (e) {
       if (import.meta.env?.DEV) {
         console.error(`[reactive_views] Failed to hydrate component: ${component}`, e);
-        console.error(`[reactive_views] Make sure vite.config.ts has resolve.alias configured for /app/views/components and /app/javascript/components`);
+        console.error(`[reactive_views] Make sure vite.config.ts has resolve.alias configured for /<%= component_views_path %> and /<%= component_js_path %>`);
       }
     }
   }
@@ -205,3 +215,5 @@ if (document.readyState === 'loading') {
 // This ensures React components work correctly with Turbo Drive and Turbo Frames
 document.addEventListener('turbo:load', hydrateAll);
 document.addEventListener('turbo:frame-load', hydrateAll);
+
+

@@ -1,0 +1,109 @@
+<div class="p-8 space-y-8">
+  <h1 class="text-2xl font-bold" data-testid="page-title">Turbo + Stimulus + React Coexistence Test</h1>
+  <p class="text-gray-600">
+    This page tests that Turbo Drive, Turbo Frames, Stimulus controllers, and React components
+    all work together without conflicts.
+  </p>
+
+  <!-- Section 1: Stimulus Controller -->
+  <section class="border rounded-lg p-6" data-testid="stimulus-section">
+    <h2 class="text-xl font-semibold mb-4">Stimulus Controller</h2>
+    
+    <div data-controller="hello" class="space-y-4">
+      <div class="flex gap-2 items-center">
+        <input 
+          type="text" 
+          data-name 
+          placeholder="Enter your name"
+          class="border rounded px-3 py-2"
+          data-testid="stimulus-input"
+        />
+        <button 
+          data-action="click->hello#greet"
+          class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+          data-testid="stimulus-greet-btn"
+        >
+          Greet
+        </button>
+      </div>
+      <p data-hello-target="output" class="text-lg" data-testid="stimulus-output">
+        Waiting for Stimulus...
+      </p>
+    </div>
+    
+    <div data-controller="counter" data-counter-count-value="<%= @stimulus_count %>" class="mt-4 space-y-2">
+      <p>Stimulus Counter: <span data-counter-target="count" data-testid="stimulus-count"><%= @stimulus_count %></span></p>
+      <div class="flex gap-2">
+        <button 
+          data-action="click->counter#decrement" 
+          class="bg-gray-500 text-white px-3 py-1 rounded"
+          data-testid="stimulus-decrement"
+        >-</button>
+        <button 
+          data-action="click->counter#increment" 
+          class="bg-gray-500 text-white px-3 py-1 rounded"
+          data-testid="stimulus-increment"
+        >+</button>
+        <button 
+          data-action="click->counter#reset" 
+          class="bg-gray-300 px-3 py-1 rounded"
+          data-testid="stimulus-reset"
+        >Reset</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 2: React Component -->
+  <section class="border rounded-lg p-6" data-testid="react-section">
+    <h2 class="text-xl font-semibold mb-4">React Component</h2>
+    <Counter initialCount="<%= @react_count %>" />
+  </section>
+
+  <!-- Section 3: Turbo Frame -->
+  <section class="border rounded-lg p-6" data-testid="turbo-frame-section">
+    <h2 class="text-xl font-semibold mb-4">Turbo Frame</h2>
+    <p class="text-sm text-gray-500 mb-4">
+      This frame loads content dynamically. React components inside should hydrate correctly.
+    </p>
+    
+    <turbo-frame id="dynamic-content" data-testid="turbo-frame">
+      <div class="p-4 bg-gray-100 rounded">
+        <p data-testid="initial-frame-content">Initial frame content</p>
+        <a 
+          href="/turbo_frame_content" 
+          data-turbo-frame="dynamic-content"
+          class="text-blue-500 underline"
+          data-testid="load-frame-btn"
+        >
+          Load new content with React component
+        </a>
+      </div>
+    </turbo-frame>
+  </section>
+
+  <!-- Section 4: Turbo Drive Navigation -->
+  <section class="border rounded-lg p-6" data-testid="turbo-drive-section">
+    <h2 class="text-xl font-semibold mb-4">Turbo Drive Navigation</h2>
+    <p class="text-sm text-gray-500 mb-4">
+      These links use Turbo Drive. React components should hydrate after navigation.
+    </p>
+    <div class="flex gap-4">
+      <a 
+        href="/counter" 
+        class="text-blue-500 underline"
+        data-testid="turbo-link-counter"
+      >
+        Go to Counter page
+      </a>
+      <a 
+        href="/turbo_mixed" 
+        class="text-blue-500 underline"
+        data-testid="turbo-link-self"
+      >
+        Reload this page
+      </a>
+    </div>
+  </section>
+</div>
+
+

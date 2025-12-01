@@ -12,6 +12,10 @@ module ReactiveViews
       class_option :skip_procfile, type: :boolean, default: false, desc: "Do not create/append Procfile.dev"
       class_option :boot_path, type: :string, default: nil, desc: "Override default boot module path in initializer"
       class_option :with_example, type: :boolean, default: false, desc: "Generate example component and ERB usage hint"
+      class_option :component_views_path, type: :string, default: "app/views/components",
+                                          desc: "Path for React components in views (default: app/views/components)"
+      class_option :component_js_path, type: :string, default: "app/javascript/components",
+                                       desc: "Path for React components in JavaScript (default: app/javascript/components)"
 
       def initialize(*args)
         super
@@ -203,41 +207,39 @@ module ReactiveViews
       end
 
       def copy_boot_script
-        # Copy the TypeScript boot source from the gem to app/javascript
-        # This allows Vite to bundle it with React
+        # Generate the TypeScript boot source from template to app/javascript
+        # This allows Vite to bundle it with React and configures component paths
         empty_directory "app/javascript/reactive_views"
 
-        # Find the gem directory to locate the boot script
-        gem_dir = Gem.loaded_specs["reactive_views"]&.gem_dir
+        # Calculate glob patterns based on component paths
+        # The boot.ts file is located at app/javascript/reactive_views/boot.ts
+        # so we need relative paths from there
 
-        if gem_dir.nil?
-          boot_file = Gem.find_files("reactive_views/boot").first
-          gem_dir = File.expand_path("../..", boot_file) if boot_file
-        end
+        views_path = options[:component_views_path]
+        js_path = options[:component_js_path]
 
-        unless gem_dir
-          say_status :error, "Could not find reactive_views gem directory", :red
-          return
-        end
+        # Calculate relative glob patterns from app/javascript/reactive_views/
+        # to the component directories
+        @component_views_path = views_path
+        @component_js_path = js_path
+        @component_views_glob = calculate_glob_pattern(views_path, "app/javascript/reactive_views")
+        @component_js_glob = calculate_glob_pattern(js_path, "app/javascript/reactive_views")
+        @component_views_glob_prefix = @component_views_glob.sub("**/*.{tsx,jsx,ts,js}", "")
+        @component_js_glob_prefix = @component_js_glob.sub("**/*.{tsx,jsx,ts,js}", "")
 
-        # Use the TypeScript source file
-        boot_source = File.join(gem_dir, "app", "frontend", "reactive_views", "boot.ts")
-
-        unless File.exist?(boot_source)
-          say_status :error, "Boot script source not found at: #{boot_source}", :red
-          return
-        end
-
-        # Copy the TypeScript source to the app for Vite to bundle
-        copy_file boot_source, "app/javascript/reactive_views/boot.ts"
-        say "✓ Copied ReactiveViews boot script to app/javascript/reactive_views/", :green
+        template "boot.ts.tt", "app/javascript/reactive_views/boot.ts"
+        say "✓ Generated ReactiveViews boot script at app/javascript/reactive_views/boot.ts", :green
+        say "  Component paths configured:", :cyan
+        say "    Views: #{views_path}", :cyan
+        say "    JavaScript: #{js_path}", :cyan
       end
 
       def example_component
         return unless options[:with_example]
 
-        empty_directory "app/views/components"
-        template "example_component.tsx.tt", "app/views/components/example_hello.tsx"
+        component_dir = options[:component_views_path]
+        empty_directory component_dir
+        template "example_component.tsx.tt", "#{component_dir}/example_hello.tsx"
         say 'Add to an ERB view to test: <ExampleHello name="Rails" />', :green
       end
 
@@ -561,6 +563,32 @@ module ReactiveViews
       end
 
       private
+
+      # Calculate the relative glob pattern from boot.ts location to component directory
+      # e.g., from "app/javascript/reactive_views" to "app/views/components"
+      # returns "../../views/components/**/*.{tsx,jsx,ts,js}"
+      def calculate_glob_pattern(component_path, boot_dir)
+        # Split paths into parts
+        boot_parts = boot_dir.split("/")
+        component_parts = component_path.split("/")
+
+        # Find common prefix
+        common_length = 0
+        boot_parts.each_with_index do |part, i|
+          break unless component_parts[i] == part
+
+          common_length = i + 1
+        end
+
+        # Calculate how many levels up we need to go
+        levels_up = boot_parts.length - common_length
+        up_path = "../" * levels_up
+
+        # Get the remaining path after common prefix
+        remaining_path = component_parts[common_length..].join("/")
+
+        "#{up_path}#{remaining_path}/**/*.{tsx,jsx,ts,js}"
+      end
 
       def parse_procfile(content)
         processes = {}

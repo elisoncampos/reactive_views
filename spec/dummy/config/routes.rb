@@ -20,6 +20,9 @@ Rails.application.routes.draw do
   get '/interactive', to: 'test#interactive'
   get '/counter', to: 'test#counter'
   get '/hooks_playground', to: 'test#hooks_playground'
+  get '/shadcn_demo', to: 'test#shadcn_demo'
+  get '/turbo_mixed', to: 'test#turbo_mixed'
+  get '/turbo_frame_content', to: 'test#turbo_frame_content'
 
   # Routes for tsx partial composition tests
   get '/users', to: 'users#index'

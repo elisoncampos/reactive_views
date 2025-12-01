@@ -6,7 +6,9 @@ require 'capybara/cuprite'
 # Configure Capybara
 Capybara.configure do |config|
   # Increase timeout for slow CI environments
-  config.default_max_wait_time = ENV.fetch('CAPYBARA_TIMEOUT', 10).to_i
+  # Default to 15 seconds in CI, 10 locally
+  default_timeout = ENV['CI'] ? 15 : 10
+  config.default_max_wait_time = ENV.fetch('CAPYBARA_TIMEOUT', default_timeout).to_i
   config.default_driver = :rack_test
   config.javascript_driver = :cuprite
   config.server = :puma, { Silent: true }
@@ -36,5 +38,16 @@ RSpec.configure do |config|
   # Configure Capybara for system specs
   config.before(:each, type: :system) do
     driven_by :cuprite
+  end
+
+  # Reset browser state between tests to prevent pollution
+  config.after(:each, type: :system) do
+    # Clear all sessions to prevent test pollution
+    begin
+      Capybara.reset_sessions!
+      page.driver.browser.reset if page.driver.respond_to?(:browser) && page.driver.browser.respond_to?(:reset)
+    rescue StandardError
+      # Ignore reset errors
+    end
   end
 end

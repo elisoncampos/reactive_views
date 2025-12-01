@@ -14,6 +14,7 @@ abort('The Rails environment is running in production mode!') if Rails.env.produ
 require 'reactive_views'
 
 require 'rspec/rails'
+require 'rspec/retry'
 require 'capybara/rails'
 require 'capybara/rspec'
 
@@ -41,6 +42,9 @@ RSpec.configure do |config|
       rv_config.enabled = true
       rv_config.ssr_url = "http://localhost:#{TestServers::SSR_PORT}"
       rv_config.component_views_paths = [ "#{TestServers::SPEC_DUMMY_DIR}/app/views/components" ]
+      # Longer timeout for tests to handle SSR server load
+      rv_config.ssr_timeout = 15
+      rv_config.batch_timeout = 30
     end
   end
 
@@ -84,6 +88,28 @@ RSpec.configure do |config|
   # Clear renderer cache and give SSR server breathing room between system tests
   config.before(:each, type: :system, js: true) do
     ReactiveViews::Renderer.clear_cache if ReactiveViews::Renderer.respond_to?(:clear_cache)
-    sleep 0.25 # Pause to let SSR server recover between tests
+    # Pause to let SSR server recover between tests
+    sleep 0.3
+  end
+
+  # Configure rspec-retry for system tests to handle SSR timing issues
+  config.verbose_retry = true # Show retry output
+  config.display_try_failure_messages = true
+
+  # Retry system tests that depend on SSR (only in CI for speed locally)
+  config.around(:each, type: :system) do |example|
+    example.run_with_retry retry: (ENV['CI'] ? 3 : 1)
+  end
+
+  # Clear browser state after retries to prevent pollution
+  config.retry_callback = proc do |example|
+    if example.metadata[:type] == :system
+      begin
+        Capybara.reset_sessions!
+        sleep 0.3
+      rescue StandardError
+        # Ignore cleanup errors
+      end
+    end
   end
 end

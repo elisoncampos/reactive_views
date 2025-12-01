@@ -1,7 +1,7 @@
 ReactiveViews.configure do |c|
   c.enabled = true
   c.ssr_url = ENV.fetch("RV_SSR_URL", "http://localhost:5175")
-  c.component_views_paths = ["app/views/components"]
-  c.component_js_paths = ["app/javascript/components"]
+  c.component_views_paths = ["<%= options[:component_views_path] %>"]
+  c.component_js_paths = ["<%= options[:component_js_path] %>"]
   # c.ssr_cache_ttl_seconds = 2
 end

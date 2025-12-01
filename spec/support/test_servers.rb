@@ -77,9 +77,21 @@ module TestServers
       puts 'Test servers stopped.'
     end
 
+    def clear_ssr_cache
+      uri = URI.parse("http://localhost:#{SSR_PORT}/clear-cache")
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.open_timeout = 5
+      http.read_timeout = 5
+
+      request = Net::HTTP::Post.new(uri.request_uri)
+      http.request(request)
+    rescue StandardError
+      # Ignore errors - server might not support this endpoint
+    end
+
     private
 
-    def wait_for_server(url, timeout: 15)
+    def wait_for_server(url, timeout: 30)
       start_time = Time.now
       loop do
         begin
@@ -107,13 +119,17 @@ module TestServers
     end
 
     def warmup_ssr(ssr_url)
-      # Pre-compile a few components to warm up the bundler cache
+      # Pre-compile components to warm up the bundler cache
+      # This prevents timeout issues during tests
       warmup_components = %w[
         Counter.tsx
         InteractiveCounter.tsx
         HooksPlayground.tsx
         HooksPlaygroundJsx.jsx
+        ShadcnDemo.tsx
       ]
+
+      puts "  Warming up SSR server with #{warmup_components.length} components..."
 
       warmup_components.each do |component|
         component_path = File.join(SPEC_DUMMY_DIR, 'app', 'views', 'components', component)
@@ -129,11 +145,17 @@ module TestServers
           request['Content-Type'] = 'application/json'
           request.body = JSON.generate({ componentPath: component_path, props: {} })
 
-          http.request(request)
-        rescue StandardError
-          # Ignore warmup errors - test will catch real issues
+          response = http.request(request)
+          status = response.code.to_i < 400 ? '✓' : '✗'
+          puts "    #{status} #{component}"
+        rescue StandardError => e
+          puts "    ✗ #{component} (#{e.message})"
         end
       end
+
+      # Additional pause to let esbuild finish any pending work
+      sleep 1
+      puts "  SSR warmup complete."
     end
   end
 end

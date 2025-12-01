@@ -1,0 +1,21 @@
+<turbo-frame id="dynamic-content">
+  <div class="p-4 bg-green-100 rounded space-y-4">
+    <p data-testid="loaded-frame-content">
+      Frame loaded at: <%= @timestamp %>
+    </p>
+    <div data-testid="frame-react-component">
+      <p class="text-sm text-gray-600 mb-2">React component inside Turbo Frame:</p>
+      <Counter initialCount="99" />
+    </div>
+    <a 
+      href="/turbo_mixed" 
+      data-turbo-frame="dynamic-content"
+      class="text-blue-500 underline"
+      data-testid="reload-frame-btn"
+    >
+      Reload original content
+    </a>
+  </div>
+</turbo-frame>
+
+

@@ -263,6 +263,8 @@ GEM
       rspec-expectations (~> 3.13)
       rspec-mocks (~> 3.13)
       rspec-support (~> 3.13)
+    rspec-retry (0.6.2)
+      rspec-core (> 3.3)
     rspec-support (3.13.6)
     rubocop (1.81.7)
       json (~> 2.3)
@@ -373,6 +375,7 @@ DEPENDENCIES
   reactive_views!
   rspec (~> 3.0)
   rspec-rails (~> 6.0)
+  rspec-retry (~> 0.6)
   rubocop (~> 1.21)
   rubocop-capybara (~> 2.21)
   rubocop-rails-omakase

@@ -746,6 +746,13 @@ const Router = {
         return;
       }
 
+      if (req.method === "POST" && req.url === "/clear-cache") {
+        Bundler.clear();
+        PropsInference.cache?.clear?.();
+        sendJson(res, 200, { status: "cleared" });
+        return;
+      }
+
       if (req.method === "GET" && req.url.startsWith("/full-page-bundles/")) {
         await this.handleBundleRequest(req, res);
         return;
