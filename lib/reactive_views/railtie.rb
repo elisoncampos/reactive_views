@@ -70,6 +70,10 @@ module ReactiveViews
           def transform_reactive_views_components
             yield  # Let controller exceptions bubble up naturally to rescue_from handlers
 
+            # Skip transformation for redirects (3xx responses)
+            # This prevents interference with redirect_to calls in rescue_from handlers
+            return if response.redirect?
+
             # Only transform HTML responses
             if response.content_type&.include?("text/html") && response.body.present?
               begin
