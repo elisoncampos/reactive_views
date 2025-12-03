@@ -209,3 +209,11 @@ if (document.readyState === 'loading') {
 document.addEventListener('turbo:load', hydrateAll);
 document.addEventListener('turbo:frame-load', hydrateAll);
 
+// Clean up before Turbo caches the page for back/forward navigation
+// Without this, restored pages have data-reactive-hydrated="true" but no actual React instances
+document.addEventListener('turbo:before-cache', () => {
+  document.querySelectorAll('[data-reactive-hydrated]').forEach(el => {
+    el.removeAttribute('data-reactive-hydrated');
+  });
+});
+

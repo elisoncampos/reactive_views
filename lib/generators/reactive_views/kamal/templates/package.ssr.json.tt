@@ -1,7 +1,9 @@
 {
-  "name": "reactive-views-gem",
+  "name": "reactive-views-ssr",
+  "version": "1.0.0",
   "private": true,
-  "description": "Node.js dependencies for ReactiveViews SSR server",
+  "description": "ReactiveViews SSR Server",
+  "type": "module",
   "engines": {
     "node": ">=22.0.0"
   },
@@ -12,3 +14,5 @@
     "typescript": "^5.7.0"
   }
 }
+
+

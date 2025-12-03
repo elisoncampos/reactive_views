@@ -21,13 +21,13 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "3.4.0"
+          ruby-version: "3.4.1"
           bundler-cache: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: "package-lock.json"
 
@@ -106,13 +106,13 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "3.4.0"
+          ruby-version: "3.4.1"
           bundler-cache: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: "package-lock.json"
 
@@ -188,3 +188,147 @@ jobs:
 
           # Run system tests with defined order for CI stability
           bundle exec rspec spec/system --order defined
+
+  production-build:
+    needs: unit
+    runs-on: ubuntu-latest
+    env:
+      RAILS_ENV: production
+      NODE_ENV: production
+      CI: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4.1"
+          bundler-cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: "package-lock.json"
+
+      - name: Install NPM dependencies
+        run: |
+          npm ci
+          cd spec/dummy && npm ci
+
+      - name: Build production assets
+        run: |
+          cd spec/dummy
+          npx vite build --config vite.config.ts
+
+      - name: Verify manifest exists
+        run: |
+          if [ ! -f spec/dummy/public/vite/.vite/manifest.json ] && [ ! -f spec/dummy/public/vite/manifest.json ]; then
+            echo "Error: Vite manifest not found!"
+            exit 1
+          fi
+          echo "Manifest found. Contents:"
+          cat spec/dummy/public/vite/.vite/manifest.json 2>/dev/null || cat spec/dummy/public/vite/manifest.json
+
+      - name: Report bundle sizes
+        run: |
+          echo "=== Production Bundle Sizes ==="
+          du -sh spec/dummy/public/vite/assets/* 2>/dev/null || true
+          echo ""
+          echo "Total size:"
+          du -sh spec/dummy/public/vite/ 2>/dev/null || true
+
+      - name: Check for development code leaks
+        run: |
+          echo "Checking for React Refresh in production bundles..."
+          if grep -r "@react-refresh" spec/dummy/public/vite/assets/*.js 2>/dev/null; then
+            echo "Error: React Refresh found in production bundle!"
+            exit 1
+          fi
+          echo "No development code leaks detected."
+
+      - name: Upload production assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-assets
+          path: spec/dummy/public/vite/
+          retention-days: 1
+
+  production-integration:
+    needs: production-build
+    runs-on: ubuntu-latest
+    env:
+      RAILS_ENV: production
+      CI: true
+      RV_VITE_PORT: 5174
+      RV_SSR_PORT: 5175
+      SECRET_KEY_BASE: test-secret-key-base-for-ci-only
+      RAILS_SERVE_STATIC_FILES: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4.1"
+          bundler-cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: "package-lock.json"
+
+      - name: Install NPM dependencies
+        run: |
+          npm ci
+          cd spec/dummy && npm ci
+
+      - name: Download production assets
+        uses: actions/download-artifact@v4
+        with:
+          name: production-assets
+          path: spec/dummy/public/vite/
+
+      - name: Run production specs
+        env:
+          NODE_ENV: production
+        run: |
+          set -euo pipefail
+
+          # Start SSR server in production mode
+          NODE_ENV=production node node/ssr/server.mjs &
+          SSR_PID=$!
+          echo "SSR server started with PID ${SSR_PID}"
+
+          cleanup() {
+            echo "Stopping SSR server..."
+            kill ${SSR_PID} || true
+          }
+          trap cleanup EXIT
+
+          # Wait for SSR server
+          echo "Waiting for SSR server..."
+          for attempt in $(seq 1 60); do
+            if curl -fsS "http://localhost:${RV_SSR_PORT}/health" >/dev/null 2>&1; then
+              echo "SSR server ready"
+              break
+            fi
+            sleep 1
+          done
+
+          # Warm up SSR server
+          COMPONENTS_DIR="$(pwd)/spec/dummy/app/views/components"
+          for component in Counter.tsx InteractiveCounter.tsx; do
+            payload=$(node -e "console.log(JSON.stringify({ componentPath: process.argv[1], props: {} }))" "${COMPONENTS_DIR}/${component}")
+            curl -fsS -X POST "http://localhost:${RV_SSR_PORT}/render" \
+              -H "Content-Type: application/json" \
+              -d "${payload}" >/dev/null 2>&1 || true
+          done
+
+          # Run production-specific tests
+          bundle exec rspec spec/production --tag ~type:system

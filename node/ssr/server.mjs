@@ -46,10 +46,17 @@ function collectReactExportNames(reactModule) {
     .sort();
 }
 
-const REACT_EXPORT_FALLBACKS = {
+// React 19 hooks - these are now first-class in React 19
+// We still provide fallbacks for older React versions
+const REACT_19_HOOKS = {
   useActionState:
-    "target.useActionState || ((fn, initial) => [fn(initial), () => {}])",
-  useOptimistic: "target.useOptimistic || ((initial) => [initial, () => {}])",
+    "target.useActionState || ((fn, initial) => { const [state, setState] = target.useState(initial); return [state, async (payload) => { const result = await fn(state, payload); setState(result); return result; }]; })",
+  useOptimistic:
+    "target.useOptimistic || ((initial, updateFn) => { const [state, setState] = target.useState(initial); return [state, (optimisticValue) => setState(updateFn ? updateFn(state, optimisticValue) : optimisticValue)]; })",
+  use:
+    "target.use || ((promise) => { if (promise.status === 'fulfilled') return promise.value; if (promise.status === 'rejected') throw promise.reason; throw promise; })",
+  useFormStatus:
+    "target.useFormStatus || (() => ({ pending: false, data: null, method: null, action: null }))",
 };
 
 function buildReactShimSource(reactExportNames) {
@@ -83,7 +90,7 @@ function buildReactShimSource(reactExportNames) {
   ];
 
   for (const name of reactExportNames) {
-    if (REACT_EXPORT_FALLBACKS[name]) {
+    if (REACT_19_HOOKS[name]) {
       continue;
     }
     if (!identifierRegexp.test(name)) {
@@ -92,7 +99,8 @@ function buildReactShimSource(reactExportNames) {
     lines.push(`export const ${name} = target.${name};`);
   }
 
-  for (const [name, expression] of Object.entries(REACT_EXPORT_FALLBACKS)) {
+  // React 19 hooks with fallbacks for older versions
+  for (const [name, expression] of Object.entries(REACT_19_HOOKS)) {
     if (!identifierRegexp.test(name)) {
       continue;
     }

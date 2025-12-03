@@ -1,7 +1,7 @@
 {
   "all": {
     "sourceCodeDir": "app/javascript",
-    "watchAdditionalPaths": ["app/views/components"]
+    "watchAdditionalPaths": ["<%= @component_views_path %>"]
   },
   "development": {
     "autoBuild": true,
@@ -19,3 +19,4 @@
     "port": 5174
   }
 }
+

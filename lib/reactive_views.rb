@@ -14,11 +14,31 @@ require_relative "reactive_views/temp_file_manager"
 require_relative "reactive_views/props_builder"
 require_relative "reactive_views/template_handler"
 require_relative "reactive_views/resolver"
+require_relative "reactive_views/css_strategy"
 
 require_relative "reactive_views/railtie" if defined?(Rails)
 
 module ReactiveViews
+  # Base error class for all ReactiveViews errors
   class Error < StandardError; end
+
+  # Raised when the Vite manifest file cannot be found in production
+  class AssetManifestNotFoundError < Error; end
+
+  # Raised when an expected entry is not found in the Vite manifest
+  class AssetEntryNotFoundError < Error; end
+
+  # Raised when the SSR server is unavailable
+  class SSRConnectionError < Error; end
+
+  # Raised when SSR rendering times out
+  class SSRTimeoutError < Error; end
+
+  # Raised when a component cannot be found
+  class ComponentNotFoundError < Error; end
+
+  # Raised when props inference fails
+  class PropsInferenceError < Error; end
 
   class << self
     attr_accessor :config

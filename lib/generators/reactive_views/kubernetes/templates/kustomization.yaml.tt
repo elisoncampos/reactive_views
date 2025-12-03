@@ -1,0 +1,29 @@
+# Kustomization for ReactiveViews SSR Server
+# Apply with: kubectl apply -k <%= options[:output_dir] %>/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: <%= options[:namespace] %>
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - hpa.yaml
+
+commonLabels:
+  app.kubernetes.io/name: reactive-views
+  app.kubernetes.io/component: ssr
+  app.kubernetes.io/managed-by: kustomize
+
+# Uncomment to use a different image
+# images:
+#   - name: <%= options[:image].split(':').first %>
+#     newTag: v1.0.0
+
+# Uncomment to apply patches
+# patchesStrategicMerge:
+#   - patch-replicas.yaml
+
+
