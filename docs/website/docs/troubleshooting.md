@@ -163,6 +163,93 @@ If Rails can't connect to the SSR server:
    kubectl logs -l app=reactive-views-ssr
    ```
 
+### "Component file not found" in production (Docker/Kubernetes)
+
+If you see errors like:
+```
+SSR Error: Component file not found: /rails/tmp/reactive_views_full_page/...
+```
+
+**This is a shared volume issue.** Full-page rendering creates temporary files that the SSR server needs to read. When Rails and SSR run in separate containers, they don't share the same filesystem.
+
+**Solution: Mount a shared volume between containers**
+
+#### Kamal (Docker Compose)
+
+In your `deploy.yml`:
+```yaml
+accessories:
+  ssr:
+    image: your-ssr-image
+    volumes:
+      - reactive_views_tmp:/rails/tmp/reactive_views_full_page
+
+servers:
+  web:
+    volumes:
+      - reactive_views_tmp:/rails/tmp/reactive_views_full_page
+```
+
+#### Kubernetes
+
+Create a PersistentVolumeClaim and mount it in both deployments:
+
+```yaml
+# pvc.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: reactive-views-tmp
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+
+# Rails deployment
+spec:
+  containers:
+    - name: web
+      volumeMounts:
+        - name: reactive-views-tmp
+          mountPath: /rails/tmp/reactive_views_full_page
+  volumes:
+    - name: reactive-views-tmp
+      persistentVolumeClaim:
+        claimName: reactive-views-tmp
+
+# SSR deployment  
+spec:
+  containers:
+    - name: ssr
+      volumeMounts:
+        - name: reactive-views-tmp
+          mountPath: /rails/tmp/reactive_views_full_page
+  volumes:
+    - name: reactive-views-tmp
+      persistentVolumeClaim:
+        claimName: reactive-views-tmp
+```
+
+**Alternative: Use tmpfs for better performance**
+
+For ephemeral temp files, use memory-backed storage:
+
+```yaml
+# Kubernetes with emptyDir
+volumes:
+  - name: reactive-views-tmp
+    emptyDir:
+      medium: Memory
+      sizeLimit: 100Mi
+```
+
+**Note:** The temp directory must be:
+- Writable by the Rails process
+- Readable by the SSR process  
+- Using the same path in both containers (`/rails/tmp/reactive_views_full_page`)
+
 ### Hydration mismatch errors
 
 If you see "Hydration failed" or "Text content does not match":

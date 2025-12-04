@@ -63,7 +63,7 @@ RSpec.describe 'Turbo + Production Assets Integration', type: :system, js: true 
 
       # Should still work after rapid navigation
       expect(page).to have_css('[data-reactive-hydrated="true"]', wait: render_timeout)
-      expect(page).to have_button('+')
+      expect(page).to have_css('[data-testid="increment-btn"]')
     end
   end
 
@@ -94,7 +94,9 @@ RSpec.describe 'Turbo + Production Assets Integration', type: :system, js: true 
         # New React component in frame should hydrate
         within 'turbo-frame#dynamic-content' do
           # Content should be updated (implementation specific)
-          expect(page).to have_css('[data-component]').or(have_content('new content'))
+          has_component = page.has_css?('[data-component]', wait: 2)
+          has_content = page.has_content?('new content', wait: 2)
+          expect(has_component || has_content).to be(true)
         end
       end
     end
@@ -119,7 +121,7 @@ RSpec.describe 'Turbo + Production Assets Integration', type: :system, js: true 
       expect(page).to have_css('[data-reactive-hydrated="true"]', wait: render_timeout)
 
       # Get initial count
-      initial_count_text = find('[data-component="Counter"]').text
+      initial_count_text = find('[data-testid="count-display"]').text
 
       # Navigate away
       visit '/turbo_mixed'
@@ -132,8 +134,8 @@ RSpec.describe 'Turbo + Production Assets Integration', type: :system, js: true 
       expect(page).to have_css('[data-reactive-hydrated="true"]', wait: render_timeout)
 
       # Counter should be interactive again
-      click_button '+'
-      new_count_text = find('[data-component="Counter"]').text
+      find('[data-testid="increment-btn"]').click
+      new_count_text = find('[data-testid="count-display"]').text
       expect(new_count_text).not_to eq(initial_count_text)
     end
 
@@ -162,7 +164,7 @@ RSpec.describe 'Turbo + Production Assets Integration', type: :system, js: true 
       expect(page).to have_css('[data-reactive-hydrated="true"]', wait: render_timeout)
 
       # Increment counter
-      5.times { click_button '+' }
+      5.times { find('[data-testid="increment-btn"]').click }
 
       # Navigate away and back
       visit '/turbo_mixed'
@@ -225,9 +227,8 @@ RSpec.describe 'Turbo + Production Assets Integration', type: :system, js: true 
       expect(page).to have_css('[data-testid="react-section"]', wait: render_timeout)
 
       # Both should have functional interactive elements
-      expect(page).to have_button('+')
-      expect(page).to have_button('-')
+      expect(page).to have_css('[data-testid="increment-btn"]')
+      expect(page).to have_css('[data-testid="decrement-btn"]')
     end
   end
 end
-

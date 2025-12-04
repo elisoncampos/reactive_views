@@ -262,4 +262,3 @@ RSpec.configure do |config|
     ProductionHelpers.stop_server(@production_server_pid)
   end
 end
-

@@ -159,7 +159,7 @@ module ReactiveViewsHelper
 
     script_tag = tag.script(src: asset_path, type: "module", crossorigin: "anonymous")
 
-    safe_join([css_tags, script_tag].flatten, "\n")
+    safe_join([ css_tags, script_tag ].flatten, "\n")
   end
 
   def build_asset_path(file)

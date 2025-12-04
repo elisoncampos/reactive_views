@@ -97,7 +97,8 @@ RSpec.describe 'Performance', type: :production do
       # Warm up
       ReactiveViews::Renderer.render(component_path, {})
 
-      components = 5.times.map { { componentPath: component_path, props: { initialCount: 0 } } }
+      # batch_render expects component_name, not componentPath
+      components = 5.times.map { |i| { uuid: i.to_s, component_name: 'Counter', props: { initialCount: 0 } } }
 
       time = Benchmark.realtime do
         ReactiveViews::Renderer.batch_render(components)
@@ -269,4 +270,3 @@ RSpec.describe 'Performance', type: :production do
     # Ignore errors
   end
 end
-

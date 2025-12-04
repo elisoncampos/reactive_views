@@ -16,7 +16,7 @@ RSpec.describe 'CSS Isolation', type: :production do
 
       it 'detects conflicts with provided Rails classes' do
         html = '<div class="my-custom-class"></div>'
-        conflicts = described_class.detect_conflicts(html, rails_classes: ['my-custom-class'])
+        conflicts = described_class.detect_conflicts(html, rails_classes: [ 'my-custom-class' ])
 
         expect(conflicts.size).to eq(1)
         expect(conflicts.first[:type]).to eq(:rails_conflict)
@@ -86,7 +86,7 @@ RSpec.describe 'CSS Isolation', type: :production do
       it 'returns true for .module.css files' do
         # Create a temporary file to test
         require 'tempfile'
-        file = Tempfile.new(['test', '.module.css'])
+        file = Tempfile.new([ 'test', '.module.css' ])
         file.write('.foo { color: red; }')
         file.close
 
@@ -97,7 +97,7 @@ RSpec.describe 'CSS Isolation', type: :production do
 
       it 'returns true for files with :local selector' do
         require 'tempfile'
-        file = Tempfile.new(['test', '.css'])
+        file = Tempfile.new([ 'test', '.css' ])
         file.write(':local(.foo) { color: red; }')
         file.close
 
@@ -108,7 +108,7 @@ RSpec.describe 'CSS Isolation', type: :production do
 
       it 'returns false for regular CSS files' do
         require 'tempfile'
-        file = Tempfile.new(['test', '.css'])
+        file = Tempfile.new([ 'test', '.css' ])
         file.write('.foo { color: red; }')
         file.close
 
@@ -160,11 +160,12 @@ RSpec.describe 'CSS Loading', type: :system, js: true do
     it 'CSS is loaded before JavaScript executes' do
       visit '/counter'
 
-      # Check that stylesheets are in the head
-      head_html = page.find('head', visible: false).native.inner_html
+      # Check that stylesheets are in the head using page HTML
+      page_html = page.html
+      head_section = page_html[0..page_html.index('</head>').to_i]
 
       # Should have CSS links or style tags in head
-      has_css = head_html.include?('stylesheet') || head_html.include?('<style')
+      has_css = head_section.include?('stylesheet') || head_section.include?('<style')
       expect(has_css).to be true
     end
 
@@ -199,8 +200,8 @@ RSpec.describe 'CSS Loading', type: :system, js: true do
 
       # Interactive elements should be visible and clickable
       within react_section do
-        expect(page).to have_button('+')
-        expect(page).to have_button('-')
+        expect(page).to have_css('[data-testid="increment-btn"]')
+        expect(page).to have_css('[data-testid="decrement-btn"]')
       end
     end
   end
@@ -264,4 +265,3 @@ RSpec.describe 'CSS Conflict Detection in Production Build', type: :production d
     end
   end
 end
-

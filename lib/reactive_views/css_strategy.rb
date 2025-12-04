@@ -4,18 +4,66 @@ module ReactiveViews
   # CSS isolation strategies and conflict detection utilities
   # Helps prevent style conflicts between React components and Rails views
   module CssStrategy
-    class << self
-      # Common class names that often cause conflicts between React and Rails
-      COMMON_CONFLICT_CLASSES = %w[
-        btn button card container row col form input label
-        header footer nav navbar sidebar menu modal alert
-        badge tooltip popover dropdown tab panel
-        table list item link icon text title
-        primary secondary success danger warning info
-        active disabled selected hidden visible
-        small medium large
-      ].freeze
+    # Common class names that often cause conflicts between React and Rails
+    COMMON_CONFLICT_CLASSES = %w[
+      btn button card container row col form input label
+      header footer nav navbar sidebar menu modal alert
+      badge tooltip popover dropdown tab panel
+      table list item link icon text title
+      primary secondary success danger warning info
+      active disabled selected hidden visible
+      small medium large
+    ].freeze
 
+    # Recommendations for CSS isolation strategies
+    STRATEGIES = {
+      css_modules: {
+        name: "CSS Modules",
+        description: "Automatic class name scoping with .module.css files",
+        pros: [ "Automatic scoping", "Build-time guarantee", "IDE support" ],
+        cons: [ "Requires Vite/bundler setup", "Different syntax from regular CSS" ],
+        setup: <<~SETUP
+          1. Name your CSS files with .module.css extension
+          2. Import styles as objects: import styles from './Component.module.css'
+          3. Use styles.className in your JSX
+        SETUP
+      },
+      tailwind_prefix: {
+        name: "Tailwind Prefix",
+        description: "Configure Tailwind with a prefix for React components",
+        pros: [ "Works with existing Tailwind setup", "Easy to configure" ],
+        cons: [ "Need to remember prefix", "Doesn't help with custom CSS" ],
+        setup: <<~SETUP
+          In tailwind.config.js for React components:
+          module.exports = {
+            prefix: 'rv-',
+            content: ['./app/views/components/**/*.tsx'],
+          }
+        SETUP
+      },
+      bem_convention: {
+        name: "BEM Convention",
+        description: "Use Block-Element-Modifier naming with component prefix",
+        pros: [ "No tooling required", "Clear naming", "Works everywhere" ],
+        cons: [ "Manual discipline required", "Verbose class names" ],
+        setup: <<~SETUP
+          Use component name as block: ComponentName__element--modifier
+          Example: Counter__button--primary
+        SETUP
+      },
+      shadow_dom: {
+        name: "Shadow DOM",
+        description: "Use Web Components with Shadow DOM for true isolation",
+        pros: [ "Complete CSS isolation", "Native browser feature" ],
+        cons: [ "Complex setup", "SSR challenges", "Less React-like" ],
+        setup: <<~SETUP
+          Wrap React components in custom elements with Shadow DOM.
+          Note: This requires additional setup and may affect hydration.
+        SETUP
+      }
+    }.freeze
+
+    class << self
       # Check for potential CSS conflicts in component HTML
       # Returns an array of detected conflicts with details
       #
@@ -97,54 +145,6 @@ module ReactiveViews
         content.include?(":local(") || content.include?(":global(")
       end
 
-      # Recommendations for CSS isolation strategies
-      STRATEGIES = {
-        css_modules: {
-          name: "CSS Modules",
-          description: "Automatic class name scoping with .module.css files",
-          pros: ["Automatic scoping", "Build-time guarantee", "IDE support"],
-          cons: ["Requires Vite/bundler setup", "Different syntax from regular CSS"],
-          setup: <<~SETUP
-            1. Name your CSS files with .module.css extension
-            2. Import styles as objects: import styles from './Component.module.css'
-            3. Use styles.className in your JSX
-          SETUP
-        },
-        tailwind_prefix: {
-          name: "Tailwind Prefix",
-          description: "Configure Tailwind with a prefix for React components",
-          pros: ["Works with existing Tailwind setup", "Easy to configure"],
-          cons: ["Need to remember prefix", "Doesn't help with custom CSS"],
-          setup: <<~SETUP
-            In tailwind.config.js for React components:
-            module.exports = {
-              prefix: 'rv-',
-              content: ['./app/views/components/**/*.tsx'],
-            }
-          SETUP
-        },
-        bem_convention: {
-          name: "BEM Convention",
-          description: "Use Block-Element-Modifier naming with component prefix",
-          pros: ["No tooling required", "Clear naming", "Works everywhere"],
-          cons: ["Manual discipline required", "Verbose class names"],
-          setup: <<~SETUP
-            Use component name as block: ComponentName__element--modifier
-            Example: Counter__button--primary
-          SETUP
-        },
-        shadow_dom: {
-          name: "Shadow DOM",
-          description: "Use Web Components with Shadow DOM for true isolation",
-          pros: ["Complete CSS isolation", "Native browser feature"],
-          cons: ["Complex setup", "SSR challenges", "Less React-like"],
-          setup: <<~SETUP
-            Wrap React components in custom elements with Shadow DOM.
-            Note: This requires additional setup and may affect hydration.
-          SETUP
-        }
-      }.freeze
-
       # Get recommended strategy based on project setup
       #
       # @param options [Hash] Project configuration options
@@ -177,4 +177,3 @@ module ReactiveViews
     end
   end
 end
-
