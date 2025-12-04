@@ -1,0 +1,47 @@
+# ReactiveViews SSR Server - Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: reactive-views-ssr
+  namespace: <%= options[:namespace] %>
+  labels:
+    app.kubernetes.io/name: reactive-views
+    app.kubernetes.io/component: ssr
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: <%= options[:port] %>
+      targetPort: http
+      protocol: TCP
+  selector:
+    app: reactive-views-ssr
+---
+# Optional: Ingress for external access (uncomment if needed)
+# Useful for debugging or if you want to expose SSR directly
+#
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: reactive-views-ssr
+#   namespace: <%= options[:namespace] %>
+#   labels:
+#     app.kubernetes.io/name: reactive-views
+#     app.kubernetes.io/component: ssr
+#   annotations:
+#     # Adjust based on your ingress controller
+#     kubernetes.io/ingress.class: nginx
+# spec:
+#   rules:
+#     - host: ssr.your-domain.com
+#       http:
+#         paths:
+#           - path: /
+#             pathType: Prefix
+#             backend:
+#               service:
+#                 name: reactive-views-ssr
+#                 port:
+#                   number: <%= options[:port] %>
+
+

@@ -1,0 +1,49 @@
+# .dockerignore for SSR server build
+# Exclude everything except what's needed for SSR
+
+# Exclude all by default
+*
+
+# Include only SSR-related files
+!node/
+!node/ssr/
+!package.ssr.json
+
+# Exclude node_modules (we'll npm install in container)
+node_modules/
+
+# Exclude logs and temp files
+*.log
+tmp/
+
+# Exclude git
+.git/
+.gitignore
+
+# Exclude documentation
+*.md
+docs/
+
+# Exclude specs
+spec/
+test/
+
+# Exclude IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Exclude Ruby files
+*.rb
+*.rake
+*.gemspec
+Gemfile*
+Rakefile
+
+# Exclude other config
+.github/
+coverage/
+vendor/
+
+

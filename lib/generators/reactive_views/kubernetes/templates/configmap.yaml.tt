@@ -1,0 +1,22 @@
+# ReactiveViews SSR Server - ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: reactive-views-ssr-config
+  namespace: <%= options[:namespace] %>
+  labels:
+    app.kubernetes.io/name: reactive-views
+    app.kubernetes.io/component: ssr
+data:
+  # SSR Server Configuration
+  RV_SSR_PORT: "<%= options[:port] %>"
+  NODE_ENV: "production"
+  PROJECT_ROOT: "/rails"
+  
+  # Bundle cache size (number of components to keep in memory)
+  RV_SSR_BUNDLE_CACHE: "50"
+  
+  # Logging level
+  LOG_LEVEL: "info"
+
+

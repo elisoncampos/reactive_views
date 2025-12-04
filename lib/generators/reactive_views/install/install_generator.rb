@@ -42,21 +42,39 @@ module ReactiveViews
           begin
             config = JSON.parse(File.read(vite_config_path))
             config["development"] ||= {}
+            config["production"] ||= {}
 
-            # Only set port if not already configured
+            updated = false
+
+            # Set default development port if not already configured
             unless config["development"]["port"]
               config["development"]["port"] = 5174
+              updated = true
+            end
+
+            # Ensure production config exists with proper settings
+            unless config["production"]["publicOutputDir"]
+              config["production"]["autoBuild"] = false
+              config["production"]["publicOutputDir"] = "vite"
+              config["production"]["port"] = 5174
+              updated = true
+            end
+
+            if updated
               File.write(vite_config_path, JSON.pretty_generate(config))
-              say_status :update, "#{vite_config_path} (set default Vite port to 5174)", :green
+              say_status :update, "#{vite_config_path} (added production config)", :green
             end
           rescue JSON::ParserError
             say_status :error, "Could not parse #{vite_config_path}", :red
           end
         else
+          # Use the component views path for watching
+          watch_path = options[:component_views_path]
+
           create_file vite_config_path, JSON.pretty_generate({
                                                                "all" => {
                                                                  "sourceCodeDir" => "app/javascript",
-                                                                 "watchAdditionalPaths" => []
+                                                                 "watchAdditionalPaths" => [ watch_path ]
                                                                },
                                                                "development" => {
                                                                  "autoBuild" => true,
@@ -66,7 +84,12 @@ module ReactiveViews
                                                                "test" => {
                                                                  "autoBuild" => true,
                                                                  "publicOutputDir" => "vite-test",
-                                                                 "port" => 5175
+                                                                 "port" => 5174
+                                                               },
+                                                               "production" => {
+                                                                 "autoBuild" => false,
+                                                                 "publicOutputDir" => "vite",
+                                                                 "port" => 5174
                                                                }
                                                              })
         end
@@ -153,20 +176,79 @@ module ReactiveViews
             end
           end
         else
-          # Create new vite.config.ts with React plugin
+          # Create new vite.config.ts with React plugin and production-ready settings
           react_config = <<~JS
-            import { defineConfig } from 'vite'
+            import { defineConfig, loadEnv } from 'vite'
             import RubyPlugin from 'vite-plugin-ruby'
             import react from '@vitejs/plugin-react'
+            import path from 'path'
 
-            export default defineConfig({
-              server: {
-                port: parseInt(process.env.RV_VITE_PORT || '5174'),
-              },
-              plugins: [
-                RubyPlugin(),
-                react(),
-              ],
+            const port = parseInt(process.env.RV_VITE_PORT || '5174')
+
+            export default defineConfig(({ mode }) => {
+              const env = loadEnv(mode, process.cwd(), '')
+              const isProduction = mode === 'production'
+
+              return {
+                plugins: [
+                  RubyPlugin(),
+                  react(),
+                ],
+
+                // Base path for assets - can be overridden via ASSET_HOST env var for CDN
+                base: isProduction && env.ASSET_HOST ? `${env.ASSET_HOST}/vite/` : undefined,
+
+                server: {
+                  port,
+                  strictPort: true,
+                },
+
+                resolve: {
+                  alias: {
+                    '@components': path.resolve(__dirname, '#{options[:component_views_path]}'),
+                    '@js-components': path.resolve(__dirname, '#{options[:component_js_path]}'),
+                  },
+                },
+
+                build: {
+                  // Modern browsers only in production for smaller bundles
+                  target: isProduction ? 'es2022' : 'esnext',
+
+                  // Generate manifest for Rails integration
+                  manifest: true,
+
+                  // Single CSS file for simpler loading order
+                  cssCodeSplit: false,
+
+                  // Source maps in production for debugging (can be disabled via env)
+                  sourcemap: env.VITE_SOURCEMAP !== 'false',
+
+                  rollupOptions: {
+                    output: {
+                      // Consistent naming with content hashes for cache busting
+                      entryFileNames: 'assets/[name]-[hash].js',
+                      chunkFileNames: 'assets/[name]-[hash].js',
+                      assetFileNames: 'assets/[name]-[hash][extname]',
+                    },
+                  },
+
+                  // Increase chunk size warning threshold
+                  chunkSizeWarningLimit: 1000,
+                },
+
+                // CSS configuration
+                css: {
+                  // Enable CSS modules for .module.css files
+                  modules: {
+                    localsConvention: 'camelCase',
+                  },
+                },
+
+                // Optimize deps for faster dev server startup
+                optimizeDeps: {
+                  include: ['react', 'react-dom'],
+                },
+              }
             })
           JS
           create_file vite_config_path, react_config

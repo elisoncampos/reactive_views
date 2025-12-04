@@ -14,7 +14,7 @@ RSpec.describe 'Turbo + Stimulus + React Coexistence', type: :system, js: true d
 
       # Wait for Stimulus to initialize (it changes the output text)
       expect(page).to have_content('Stimulus connected!', wait: render_timeout)
-      
+
       # Test Stimulus counter is present
       expect(page).to have_content('Stimulus Counter:', wait: render_timeout)
     end
@@ -26,7 +26,7 @@ RSpec.describe 'Turbo + Stimulus + React Coexistence', type: :system, js: true d
 
       # Wait for page and React section
       expect(page).to have_css('[data-testid="react-section"]', wait: render_timeout)
-      
+
       # React counter should render (either with SSR content or hydrated)
       # Just verify the component is present and has interactive elements
       expect(page).to have_button('+', wait: render_timeout)

@@ -51,7 +51,7 @@ RSpec.describe 'shadcn/ui Component Compatibility', type: :system, js: true do
       # Wait for components to render - use content-based assertions
       expect(page).to have_content('shadcn/ui Integration Test', wait: render_timeout)
       expect(page).to have_content('Testing CVA', wait: render_timeout)
-      
+
       # Verify buttons are present (Card footer contains Reset)
       expect(page).to have_button('Click me', wait: render_timeout)
       expect(page).to have_button('Change variant', wait: render_timeout)
