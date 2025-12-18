@@ -3,9 +3,14 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 
 const port = parseInt(process.env.RV_VITE_PORT || '5174');
+const dummyRoot = __dirname;
+const sourceRoot = path.resolve(dummyRoot, 'app/javascript');
 
 // Test configuration - simplified for running specs
 export default defineConfig({
+  // Align with vite-ruby test config (publicOutputDir = vite-test, sourceCodeDir = app/javascript)
+  root: sourceRoot,
+  base: '/vite-test/',
   plugins: [react()],
 
   server: {
@@ -16,7 +21,7 @@ export default defineConfig({
 
   resolve: {
     alias: {
-      '@components': path.resolve(__dirname, 'app/views/components'),
+      '@components': path.resolve(dummyRoot, 'app/views/components'),
     },
   },
 
@@ -24,7 +29,7 @@ export default defineConfig({
     manifest: true,
     rollupOptions: {
       input: {
-        application: path.resolve(__dirname, 'app/javascript/entrypoints/application.js'),
+        application: path.resolve(sourceRoot, 'entrypoints/application.js'),
       },
     },
   },

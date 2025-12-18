@@ -103,7 +103,7 @@ jobs:
           }
 
           wait_for "http://localhost:${RV_SSR_PORT}/health"
-          wait_for "http://localhost:${RV_VITE_PORT}/@vite/client"
+          wait_for "http://localhost:${RV_VITE_PORT}/vite-test/@vite/client"
 
           # Warm SSR once to avoid first-render timeouts
           payload=$(node -e "console.log(JSON.stringify({ componentPath: process.argv[1], props: { initialCount: 0 } }))" "$(pwd)/spec/dummy/app/views/components/Counter.tsx")
@@ -181,7 +181,7 @@ jobs:
           }
 
           wait_for "http://localhost:${RV_SSR_PORT}/health"
-          wait_for "http://localhost:${RV_VITE_PORT}/@vite/client"
+          wait_for "http://localhost:${RV_VITE_PORT}/vite-test/@vite/client"
 
           bundle exec rspec spec/system --order defined
 
