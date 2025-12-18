@@ -29,12 +29,14 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: "package-lock.json"
+          cache-dependency-path: |
+            package-lock.json
+            spec/dummy/package-lock.json
 
       - name: Install NPM dependencies
         run: |
           npm ci
-          cd spec/dummy && npm ci
+          cd spec/dummy && rm -rf node_modules && npm install
 
       - name: Run unit specs
         run: |
@@ -114,12 +116,14 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: "package-lock.json"
+          cache-dependency-path: |
+            package-lock.json
+            spec/dummy/package-lock.json
 
       - name: Install NPM dependencies
         run: |
           npm ci
-          cd spec/dummy && npm ci
+          cd spec/dummy && rm -rf node_modules && npm install
 
       - name: Run system specs
         env:
@@ -127,12 +131,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Start SSR server
           node node/ssr/server.mjs &
           SSR_PID=$!
           echo "SSR server started with PID ${SSR_PID}"
 
-          # Start Vite dev server inside dummy app
           pushd spec/dummy >/dev/null
           npx vite --config vite.test.config.ts &
           VITE_PID=$!
@@ -175,7 +177,6 @@ jobs:
             echo "SSR warm-up complete for ${component_path}"
           }
 
-          # Warm up multiple components to prevent SSR timeout during tests
           COMPONENTS_DIR="$(pwd)/spec/dummy/app/views/components"
           warm_up_ssr "${COMPONENTS_DIR}/Counter.tsx"
           warm_up_ssr "${COMPONENTS_DIR}/InteractiveCounter.tsx"
@@ -183,10 +184,8 @@ jobs:
           warm_up_ssr "${COMPONENTS_DIR}/HooksPlaygroundJsx.jsx"
           warm_up_ssr "${COMPONENTS_DIR}/ShadcnDemo.tsx"
 
-          # Allow SSR server to settle after warmup
           sleep 2
 
-          # Run system tests with defined order for CI stability
           bundle exec rspec spec/system --order defined
 
   production-build:
@@ -211,17 +210,19 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: "package-lock.json"
+          cache-dependency-path: |
+            package-lock.json
+            spec/dummy/package-lock.json
 
       - name: Install NPM dependencies
         run: |
           npm ci
-          cd spec/dummy && npm ci
+          cd spec/dummy && rm -rf node_modules && npm install
 
       - name: Build production assets
         run: |
           cd spec/dummy
-          npx vite build --config vite.config.ts
+          npx vite build --config vite.config.mts
 
       - name: Verify manifest exists
         run: |
@@ -281,12 +282,14 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: "package-lock.json"
+          cache-dependency-path: |
+            package-lock.json
+            spec/dummy/package-lock.json
 
       - name: Install NPM dependencies
         run: |
           npm ci
-          cd spec/dummy && npm ci
+          cd spec/dummy && rm -rf node_modules && npm install
 
       - name: Download production assets
         uses: actions/download-artifact@v4
@@ -300,7 +303,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Start SSR server in production mode
           NODE_ENV=production node node/ssr/server.mjs &
           SSR_PID=$!
           echo "SSR server started with PID ${SSR_PID}"
@@ -311,7 +313,6 @@ jobs:
           }
           trap cleanup EXIT
 
-          # Wait for SSR server
           echo "Waiting for SSR server..."
           for attempt in $(seq 1 60); do
             if curl -fsS "http://localhost:${RV_SSR_PORT}/health" >/dev/null 2>&1; then
@@ -321,7 +322,6 @@ jobs:
             sleep 1
           done
 
-          # Warm up SSR server
           COMPONENTS_DIR="$(pwd)/spec/dummy/app/views/components"
           for component in Counter.tsx InteractiveCounter.tsx; do
             payload=$(node -e "console.log(JSON.stringify({ componentPath: process.argv[1], props: {} }))" "${COMPONENTS_DIR}/${component}")
@@ -330,5 +330,4 @@ jobs:
               -d "${payload}" >/dev/null 2>&1 || true
           done
 
-          # Run production-specific tests
           bundle exec rspec spec/production --tag ~type:system
