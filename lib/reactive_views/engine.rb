@@ -12,3 +12,4 @@ module ReactiveViews
     end
   end
 end
+

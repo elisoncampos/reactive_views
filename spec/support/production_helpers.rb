@@ -21,11 +21,17 @@ module ProductionHelpers
       end
 
       Dir.chdir(DUMMY_APP_PATH) do
+        # Use the local Vite install (no network) and the ESM config file.
+        #
+        # In CI we want build failures to be visible in logs; locally we keep it quiet.
+        out = ENV['CI'] ? $stdout : File::NULL
+        err = ENV['CI'] ? $stderr : File::NULL
+
         system(
           { 'NODE_ENV' => 'production', 'RAILS_ENV' => 'production' },
-          'npx vite build --config vite.config.ts',
-          out: File::NULL,
-          err: File::NULL
+          'npx --no-install vite build --config vite.config.mts',
+          out: out,
+          err: err
         )
       end
     end
