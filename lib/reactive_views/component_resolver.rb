@@ -11,6 +11,14 @@ module ReactiveViews
     class << self
       def resolve(component_name, paths = nil)
         setup_notifications!
+
+        # If caller already passed a concrete file path, accept it.
+        # Some production/performance specs render by absolute component path.
+        if component_name.is_a?(String) && component_name.include?("/")
+          expanded = File.expand_path(component_name)
+          return expanded if File.file?(expanded)
+        end
+
         search_paths = normalize_paths(paths)
         cache_key = build_cache_key(component_name, search_paths)
 

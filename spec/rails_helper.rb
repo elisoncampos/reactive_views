@@ -7,11 +7,18 @@ ENV['RAILS_ENV'] ||= 'test'
 # Load the Rails application (spec/dummy)
 require_relative 'dummy/config/environment'
 
-# Prevent database truncation if the environment is production
-abort('The Rails environment is running in production mode!') if Rails.env.production?
+# Safety guard: by default, prevent accidentally booting the dummy app in production.
+# We intentionally run `spec/production` with `RAILS_ENV=production` to validate
+# real production behavior. Enable that explicitly via env flag.
+if Rails.env.production? && ENV['REACTIVE_VIEWS_ALLOW_PRODUCTION_SPECS'] != '1'
+  abort('The Rails environment is running in production mode!')
+end
 
 # Require the gem code
 require 'reactive_views'
+
+# Ensure helpers are included in ActionView (sometimes on_load doesn't fire in test)
+ActionView::Base.include(ReactiveViewsHelper) unless ActionView::Base.include?(ReactiveViewsHelper)
 
 require 'rspec/rails'
 require 'rspec/retry'

@@ -71,7 +71,7 @@ function toPath(name: string): string {
 }
 
 // Import all components eagerly so they are available for hydration
-const rawComponentsFromViews = import.meta.glob('../views/components/**/*.{tsx,jsx,ts,js}', { 
+const rawComponentsFromViews = import.meta.glob('../views/components/**/*.{tsx,jsx,ts,js}', {
   eager: true,
 });
 
@@ -103,7 +103,7 @@ async function loadComponent(name: string) {
     for (let i = 0; i < nameVariants.length; i++) {
       const nameVar = nameVariants[i];
       const leafVar = leafVariants[i];
-      
+
       for (const ext of exts) {
         const candidates = [
           `${base}/${nameVar}${ext}`,
@@ -131,7 +131,9 @@ function resolveSsrUrl() {
   if (meta?.getAttribute('content')) {
     return meta.getAttribute('content')!.replace(/\/$/, '');
   }
-  return 'http://localhost:5175';
+  // Never bake a dev-only host/port into production bundles.
+  // If no meta/global is provided, assume same-origin.
+  return window.location.origin;
 }
 
 async function hydrateFullPages() {
@@ -167,17 +169,17 @@ async function hydrateFullPages() {
 async function hydrateIslands() {
   const nodes = Array.from(document.querySelectorAll('[data-island-uuid][data-component]'));
   console.log(`[reactive_views] Found ${nodes.length} islands to hydrate`);
-  
+
   for (const node of nodes) {
     const el = node as HTMLElement;
-    
+
     // Skip if already hydrated
     if (el.dataset.reactiveHydrated === 'true') continue;
-    
+
     const uuid = el.dataset.islandUuid!;
     const component = el.dataset.component!;
     console.log(`[reactive_views] Hydrating component: ${component} (uuid: ${uuid})`);
-    
+
     try {
       const Comp = await loadComponent(component);
       const props = readProps(uuid);
@@ -208,4 +210,12 @@ if (document.readyState === 'loading') {
 // This ensures React components work correctly with Turbo Drive and Turbo Frames
 document.addEventListener('turbo:load', hydrateAll);
 document.addEventListener('turbo:frame-load', hydrateAll);
+
+// Clean up before Turbo caches the page for back/forward navigation
+// Without this, restored pages have data-reactive-hydrated="true" but no actual React instances
+document.addEventListener('turbo:before-cache', () => {
+  document.querySelectorAll('[data-reactive-hydrated]').forEach(el => {
+    el.removeAttribute('data-reactive-hydrated');
+  });
+});
 

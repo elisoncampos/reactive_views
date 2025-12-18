@@ -8,6 +8,8 @@ module TestServers
   VITE_PORT = 5174
   SSR_PORT = 5175
   SPEC_DUMMY_DIR = File.expand_path('../dummy', __dir__)
+  VITE_TEST_BASE = "/vite-test"
+  HOST = "127.0.0.1"
 
   class << self
     attr_reader :vite_pid, :ssr_pid
@@ -15,44 +17,48 @@ module TestServers
     def start
       return if ENV['REACTIVE_VIEWS_SKIP_SERVERS'] == '1'
 
-      if ENV['CI']
-        wait_for_server("http://localhost:#{VITE_PORT}")
-        wait_for_server("http://localhost:#{SSR_PORT}")
-        return
-      end
-
       puts 'Starting test servers...'
 
-      # Kill any processes using our ports to avoid conflicts
-      [ VITE_PORT, SSR_PORT ].each do |port|
-        system("lsof -ti:#{port} | xargs kill -9 2>/dev/null", out: File::NULL, err: File::NULL)
+      # In CI we should not rely on the workflow to start servers, and we also
+      # shouldn't run `lsof | kill -9` (can be unavailable / too aggressive).
+      #
+      # Instead: if a server is already up, reuse it; otherwise spawn it.
+      unless ENV['CI']
+        # Kill any processes using our ports to avoid conflicts
+        [ VITE_PORT, SSR_PORT ].each do |port|
+          system("lsof -ti:#{port} | xargs kill -9 2>/dev/null", out: File::NULL, err: File::NULL)
+        end
+        sleep 1
       end
-      sleep 1
 
       # Start Vite dev server
-      @vite_pid = spawn(
-        { 'RV_VITE_PORT' => VITE_PORT.to_s },
-        'npx vite --config vite.test.config.ts',
-        chdir: SPEC_DUMMY_DIR,
-        out: File::NULL,
-        err: File::NULL
-      )
+      unless server_up?("http://#{HOST}:#{VITE_PORT}#{VITE_TEST_BASE}/@vite/client")
+        @vite_pid = spawn(
+          { 'RV_VITE_PORT' => VITE_PORT.to_s },
+          'npm exec -- vite --config vite.test.config.ts',
+          chdir: SPEC_DUMMY_DIR,
+          out: ENV['CI'] ? $stdout : File::NULL,
+          err: ENV['CI'] ? $stderr : File::NULL
+        )
+      end
 
       # Start SSR server
       gem_root = File.expand_path('../../', __dir__)
       ssr_script = File.join(gem_root, 'node', 'ssr', 'server.mjs')
 
       # IMPORTANT: Run node in the gem root so it finds node_modules correctly
-      @ssr_pid = spawn(
-        { 'RV_SSR_PORT' => SSR_PORT.to_s, 'PROJECT_ROOT' => SPEC_DUMMY_DIR },
-        'node', ssr_script,
-        chdir: gem_root, # Run from gem root where node_modules are
-        out: File::NULL,
-        err: File::NULL
-      )
+      unless server_up?("http://#{HOST}:#{SSR_PORT}/health")
+        @ssr_pid = spawn(
+          { 'RV_SSR_PORT' => SSR_PORT.to_s, 'PROJECT_ROOT' => SPEC_DUMMY_DIR },
+          'node', ssr_script,
+          chdir: gem_root, # Run from gem root where node_modules are
+          out: ENV['CI'] ? $stdout : File::NULL,
+          err: ENV['CI'] ? $stderr : File::NULL
+        )
+      end
 
-      wait_for_server("http://localhost:#{VITE_PORT}")
-      wait_for_server("http://localhost:#{SSR_PORT}")
+      wait_for_server("http://#{HOST}:#{VITE_PORT}#{VITE_TEST_BASE}/@vite/client")
+      wait_for_server("http://#{HOST}:#{SSR_PORT}/health")
       puts 'Test servers started.'
     end
 
@@ -91,6 +97,17 @@ module TestServers
 
     private
 
+    def server_up?(url)
+      uri = URI.parse(url)
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.open_timeout = 0.5
+      http.read_timeout = 0.5
+      res = http.get(uri.request_uri)
+      res.code.to_i.positive? && res.code.to_i < 500
+    rescue StandardError
+      false
+    end
+
     def wait_for_server(url, timeout: 30)
       start_time = Time.now
       loop do
@@ -115,7 +132,7 @@ module TestServers
       end
 
       # Warm up the SSR server by pre-compiling commonly used components
-      warmup_ssr(url) if url.include?(SSR_PORT.to_s)
+      warmup_ssr("http://#{HOST}:#{SSR_PORT}") if url.include?(SSR_PORT.to_s)
     end
 
     def warmup_ssr(ssr_url)

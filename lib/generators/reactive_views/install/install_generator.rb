@@ -42,21 +42,39 @@ module ReactiveViews
           begin
             config = JSON.parse(File.read(vite_config_path))
             config["development"] ||= {}
+            config["production"] ||= {}
 
-            # Only set port if not already configured
+            updated = false
+
+            # Set default development port if not already configured
             unless config["development"]["port"]
               config["development"]["port"] = 5174
+              updated = true
+            end
+
+            # Ensure production config exists with proper settings
+            unless config["production"]["publicOutputDir"]
+              config["production"]["autoBuild"] = false
+              config["production"]["publicOutputDir"] = "vite"
+              config["production"]["port"] = 5174
+              updated = true
+            end
+
+            if updated
               File.write(vite_config_path, JSON.pretty_generate(config))
-              say_status :update, "#{vite_config_path} (set default Vite port to 5174)", :green
+              say_status :update, "#{vite_config_path} (added production config)", :green
             end
           rescue JSON::ParserError
             say_status :error, "Could not parse #{vite_config_path}", :red
           end
         else
+          # Use the component views path for watching
+          watch_path = options[:component_views_path]
+
           create_file vite_config_path, JSON.pretty_generate({
                                                                "all" => {
                                                                  "sourceCodeDir" => "app/javascript",
-                                                                 "watchAdditionalPaths" => []
+                                                                 "watchAdditionalPaths" => [ watch_path ]
                                                                },
                                                                "development" => {
                                                                  "autoBuild" => true,
@@ -66,7 +84,12 @@ module ReactiveViews
                                                                "test" => {
                                                                  "autoBuild" => true,
                                                                  "publicOutputDir" => "vite-test",
-                                                                 "port" => 5175
+                                                                 "port" => 5174
+                                                               },
+                                                               "production" => {
+                                                                 "autoBuild" => false,
+                                                                 "publicOutputDir" => "vite",
+                                                                 "port" => 5174
                                                                }
                                                              })
         end
@@ -111,18 +134,19 @@ module ReactiveViews
           end
         end
 
-        # Handle vite.config.ts - vite install may have created it
-        vite_config_path = "vite.config.ts"
-        if File.exist?(vite_config_path)
-          config_content = File.read(vite_config_path)
+        # Handle vite.config - prefer .mts (ESM) format for Vite 7.x compatibility
+        # Check for existing configs in order of preference
+        existing_config = %w[vite.config.mts vite.config.ts].find { |f| File.exist?(f) }
+
+        if existing_config
+          config_content = File.read(existing_config)
           # Check if React plugin is already present
           if config_content.include?("@vitejs/plugin-react") || config_content.include?("plugin-react")
-            say_status :skip, "vite.config.ts already has React plugin"
+            say_status :skip, "#{existing_config} already has React plugin"
           else
-            response = ask("vite.config.ts exists. Modify it to add React plugin? [Yn] ", :yellow)
+            response = ask("#{existing_config} exists. Modify it to add React plugin? [Yn] ", :yellow)
             if response.nil? || response.to_s.match?(/^y|^$/i)
-              # Prompt before modifying existing vite.config.ts
-              say_status :update, "vite.config.ts (adding React plugin)"
+              say_status :update, "#{existing_config} (adding React plugin)"
               # Add react import after vite import
               config_content = config_content.sub(
                 /(import.*from ['"]vite['"])/,
@@ -147,29 +171,89 @@ module ReactiveViews
                   "plugins: [\\1,\n      react()]"
                 )
               end
-              create_file vite_config_path, config_content, force: true
+              create_file existing_config, config_content, force: true
             else
-              say_status :skip, "vite.config.ts (skipped modification)"
+              say_status :skip, "#{existing_config} (skipped modification)"
             end
           end
         else
-          # Create new vite.config.ts with React plugin
+          # Create new vite.config.mts with ESM format for Vite 7.x compatibility
+          # Uses import.meta.dirname (Node 20.11+) instead of __dirname
           react_config = <<~JS
-            import { defineConfig } from 'vite'
+            import { defineConfig, loadEnv } from 'vite'
             import RubyPlugin from 'vite-plugin-ruby'
             import react from '@vitejs/plugin-react'
+            import path from 'path'
 
-            export default defineConfig({
-              server: {
-                port: parseInt(process.env.RV_VITE_PORT || '5174'),
-              },
-              plugins: [
-                RubyPlugin(),
-                react(),
-              ],
+            const port = parseInt(process.env.RV_VITE_PORT || '5174')
+
+            export default defineConfig(({ mode }) => {
+              const env = loadEnv(mode, process.cwd(), '')
+              const isProduction = mode === 'production'
+
+              return {
+                plugins: [
+                  RubyPlugin(),
+                  react(),
+                ],
+
+                // Base path for assets - can be overridden via ASSET_HOST env var for CDN
+                base: isProduction && env.ASSET_HOST ? `${env.ASSET_HOST}/vite/` : undefined,
+
+                server: {
+                  port,
+                  strictPort: true,
+                },
+
+                resolve: {
+                  alias: {
+                    '@components': path.resolve(import.meta.dirname, '#{options[:component_views_path]}'),
+                    '@js-components': path.resolve(import.meta.dirname, '#{options[:component_js_path]}'),
+                  },
+                },
+
+                build: {
+                  // Modern browsers only in production for smaller bundles
+                  target: isProduction ? 'es2022' : 'esnext',
+
+                  // Generate manifest for Rails integration
+                  manifest: true,
+
+                  // Single CSS file for simpler loading order
+                  cssCodeSplit: false,
+
+                  // Source maps in production for debugging (can be disabled via env)
+                  sourcemap: env.VITE_SOURCEMAP !== 'false',
+
+                  rollupOptions: {
+                    output: {
+                      // Consistent naming with content hashes for cache busting
+                      entryFileNames: 'assets/[name]-[hash].js',
+                      chunkFileNames: 'assets/[name]-[hash].js',
+                      assetFileNames: 'assets/[name]-[hash][extname]',
+                    },
+                  },
+
+                  // Increase chunk size warning threshold
+                  chunkSizeWarningLimit: 1000,
+                },
+
+                // CSS configuration
+                css: {
+                  // Enable CSS modules for .module.css files
+                  modules: {
+                    localsConvention: 'camelCase',
+                  },
+                },
+
+                // Optimize deps for faster dev server startup
+                optimizeDeps: {
+                  include: ['react', 'react-dom'],
+                },
+              }
             })
           JS
-          create_file vite_config_path, react_config
+          create_file "vite.config.mts", react_config
         end
       end
 
@@ -391,76 +475,6 @@ module ReactiveViews
             ssr: bundle exec rake reactive_views:ssr
           PROCFILE
         end
-      end
-
-      def add_rake_task
-        rakefile_path = "lib/tasks/reactive_views.rake"
-
-        # Create rake task for SSR
-        create_file rakefile_path, <<~RAKE
-          namespace :reactive_views do
-            desc "Start the ReactiveViews SSR server"
-            task :ssr do
-              require "reactive_views"
-
-              gem_root = Gem.loaded_specs["reactive_views"]&.gem_dir
-              if gem_root.nil?
-                puts "Error: Could not find reactive_views gem directory"
-                exit 1
-              end
-
-              ssr_script = File.join(gem_root, "node", "ssr", "server.mjs")
-
-              unless File.exist?(ssr_script)
-                puts "Error: SSR server script not found at: \#{ssr_script}"
-                exit 1
-              end
-
-              # Find node executable - check common version managers
-              node_path = find_node_executable
-              if node_path.nil?
-                puts "Error: Could not find node executable."
-                puts "Make sure Node.js is installed and available in your PATH."
-                puts "If using asdf/nvm, ensure your shell profile is loaded."
-                exit 1
-              end
-
-              puts "Starting ReactiveViews SSR server..."
-              exec(node_path, ssr_script)
-            end
-
-            def find_node_executable
-              # First try direct exec (works if PATH is set correctly)
-              node_in_path = \`which node 2>/dev/null\`.strip
-              return node_in_path unless node_in_path.empty?
-
-              # Try common asdf location
-              asdf_node = File.expand_path("~/.asdf/shims/node")
-              return asdf_node if File.executable?(asdf_node)
-
-              # Try common nvm locations
-              nvm_dir = ENV["NVM_DIR"] || File.expand_path("~/.nvm")
-              if Dir.exist?(nvm_dir)
-                # Find the default or current node version
-                nvm_node = Dir.glob("\#{nvm_dir}/versions/node/*/bin/node").max
-                return nvm_node if nvm_node && File.executable?(nvm_node)
-              end
-
-              # Try Homebrew locations (macOS)
-              brew_node = "/opt/homebrew/bin/node"
-              return brew_node if File.executable?(brew_node)
-
-              brew_node_intel = "/usr/local/bin/node"
-              return brew_node_intel if File.executable?(brew_node_intel)
-
-              # Try volta
-              volta_node = File.expand_path("~/.volta/bin/node")
-              return volta_node if File.executable?(volta_node)
-
-              nil
-            end
-          end
-        RAKE
       end
 
       def check_ssr_dependencies

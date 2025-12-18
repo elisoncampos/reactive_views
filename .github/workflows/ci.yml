@@ -6,14 +6,38 @@ on:
   pull_request:
     branches: [main, master]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  rubocop:
+    runs-on: ubuntu-latest
+    env:
+      RAILS_ENV: test
+      CI: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4.1"
+          bundler-cache: true
+
+      - name: Run RuboCop
+        run: bundle exec rubocop
+
   unit:
     runs-on: ubuntu-latest
     env:
       RAILS_ENV: test
       CI: true
+      REACTIVE_VIEWS_SKIP_SERVERS: "1"
       RV_VITE_PORT: 5174
       RV_SSR_PORT: 5175
+      RV_SSR_URL: "http://127.0.0.1:5175"
 
     steps:
       - uses: actions/checkout@v4
@@ -21,22 +45,30 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "3.4.0"
+          ruby-version: "3.4.1"
           bundler-cache: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
-          cache-dependency-path: "package-lock.json"
+          cache-dependency-path: package-lock.json
 
-      - name: Install NPM dependencies
+      - name: Install Node dependencies
         run: |
-          npm ci
-          cd spec/dummy && npm ci
+          set -euo pipefail
 
-      - name: Run unit specs
+          # Root deps (SSR server)
+          npm ci
+
+          # Dummy app deps
+          pushd spec/dummy >/dev/null
+          rm -rf node_modules package-lock.json
+          npm install --include=dev --no-audit --no-fund
+          popd >/dev/null
+
+      - name: Run unit + integration specs (non-system, non-production)
         run: |
           set -euo pipefail
 
@@ -45,7 +77,7 @@ jobs:
           echo "SSR server started with PID ${SSR_PID}"
 
           pushd spec/dummy >/dev/null
-          npx vite --config vite.test.config.ts &
+          npm exec -- vite --config vite.test.config.ts &
           VITE_PID=$!
           echo "Vite server started with PID ${VITE_PID}"
           popd >/dev/null
@@ -71,32 +103,21 @@ jobs:
           }
 
           wait_for "http://localhost:${RV_SSR_PORT}/health"
-          wait_for "http://localhost:${RV_VITE_PORT}/@vite/client"
+          wait_for "http://localhost:${RV_VITE_PORT}/vite-test/@vite/client"
 
-          warm_up_ssr() {
-            local component_path="$1"
-            echo "Warming up SSR server with ${component_path}..."
-            local payload
-            payload=$(node -e "console.log(JSON.stringify({ componentPath: process.argv[1], props: { initialCount: 0 } }))" "${component_path}")
+          # Warm SSR once to avoid first-render timeouts
+          payload=$(node -e "console.log(JSON.stringify({ componentPath: process.argv[1], props: { initialCount: 0 } }))" "$(pwd)/spec/dummy/app/views/components/Counter.tsx")
+          curl -fsS -X POST "http://localhost:${RV_SSR_PORT}/render" -H "Content-Type: application/json" -d "${payload}" >/dev/null
 
-            curl -fsS -X POST "http://localhost:${RV_SSR_PORT}/render" \
-              -H "Content-Type: application/json" \
-              -d "${payload}" >/dev/null
-
-            echo "SSR warm-up complete"
-          }
-
-          SSR_WARMUP_COMPONENT="$(pwd)/spec/dummy/app/views/components/Counter.tsx"
-          warm_up_ssr "${SSR_WARMUP_COMPONENT}"
-
-          bundle exec rspec --tag ~type:system
+          # IMPORTANT: unit job must NOT run production specs
+          bundle exec rspec --tag ~type:system --tag ~type:production
 
   system:
-    needs: unit
     runs-on: ubuntu-latest
     env:
       RAILS_ENV: test
       CI: true
+      REACTIVE_VIEWS_SKIP_SERVERS: "1"
       RV_VITE_PORT: 5174
       RV_SSR_PORT: 5175
 
@@ -106,35 +127,35 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "3.4.0"
+          ruby-version: "3.4.1"
           bundler-cache: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
-          cache-dependency-path: "package-lock.json"
+          cache-dependency-path: package-lock.json
 
-      - name: Install NPM dependencies
+      - name: Install Node dependencies
         run: |
+          set -euo pipefail
           npm ci
-          cd spec/dummy && npm ci
+          pushd spec/dummy >/dev/null
+          rm -rf node_modules package-lock.json
+          npm install --include=dev --no-audit --no-fund
+          popd >/dev/null
 
       - name: Run system specs
-        env:
-          NODE_ENV: test
         run: |
           set -euo pipefail
 
-          # Start SSR server
           node node/ssr/server.mjs &
           SSR_PID=$!
           echo "SSR server started with PID ${SSR_PID}"
 
-          # Start Vite dev server inside dummy app
           pushd spec/dummy >/dev/null
-          npx vite --config vite.test.config.ts &
+          npm exec -- vite --config vite.test.config.ts &
           VITE_PID=$!
           echo "Vite server started with PID ${VITE_PID}"
           popd >/dev/null
@@ -160,31 +181,79 @@ jobs:
           }
 
           wait_for "http://localhost:${RV_SSR_PORT}/health"
-          wait_for "http://localhost:${RV_VITE_PORT}/@vite/client"
+          wait_for "http://localhost:${RV_VITE_PORT}/vite-test/@vite/client"
 
-          warm_up_ssr() {
-            local component_path="$1"
-            echo "Warming up SSR server with ${component_path}..."
-            local payload
-            payload=$(node -e "console.log(JSON.stringify({ componentPath: process.argv[1], props: { initialCount: 0 } }))" "${component_path}")
-
-            curl -fsS -X POST "http://localhost:${RV_SSR_PORT}/render" \
-              -H "Content-Type: application/json" \
-              -d "${payload}" >/dev/null 2>&1 || true
-
-            echo "SSR warm-up complete for ${component_path}"
-          }
-
-          # Warm up multiple components to prevent SSR timeout during tests
-          COMPONENTS_DIR="$(pwd)/spec/dummy/app/views/components"
-          warm_up_ssr "${COMPONENTS_DIR}/Counter.tsx"
-          warm_up_ssr "${COMPONENTS_DIR}/InteractiveCounter.tsx"
-          warm_up_ssr "${COMPONENTS_DIR}/HooksPlayground.tsx"
-          warm_up_ssr "${COMPONENTS_DIR}/HooksPlaygroundJsx.jsx"
-          warm_up_ssr "${COMPONENTS_DIR}/ShadcnDemo.tsx"
-
-          # Allow SSR server to settle after warmup
-          sleep 2
-
-          # Run system tests with defined order for CI stability
           bundle exec rspec spec/system --order defined
+
+  production:
+    needs: [rubocop, unit, system]
+    runs-on: ubuntu-latest
+    env:
+      RAILS_ENV: production
+      NODE_ENV: production
+      CI: true
+      REACTIVE_VIEWS_SKIP_SERVERS: "1"
+      RV_VITE_PORT: 5174
+      RV_SSR_PORT: 5175
+      SECRET_KEY_BASE: test-secret-key-base-for-ci-only
+      RAILS_SERVE_STATIC_FILES: true
+      REACTIVE_VIEWS_ALLOW_PRODUCTION_SPECS: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4.1"
+          bundler-cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Install Node dependencies
+        env:
+          # Ensure devDependencies (vite) are installed even though NODE_ENV=production
+          NPM_CONFIG_PRODUCTION: "false"
+        run: |
+          set -euo pipefail
+          npm ci
+          pushd spec/dummy >/dev/null
+          rm -rf node_modules package-lock.json
+          npm install --include=dev --no-audit --no-fund
+          popd >/dev/null
+
+      - name: Build production assets (dummy app)
+        run: |
+          set -euo pipefail
+          pushd spec/dummy >/dev/null
+          npm exec -- vite build --config vite.config.mts
+          popd >/dev/null
+
+      - name: Run production specs
+        run: |
+          set -euo pipefail
+
+          NODE_ENV=production node node/ssr/server.mjs &
+          SSR_PID=$!
+          echo "SSR server started with PID ${SSR_PID}"
+
+          cleanup() {
+            echo "Stopping SSR server..."
+            kill ${SSR_PID} || true
+          }
+          trap cleanup EXIT
+
+          for attempt in $(seq 1 60); do
+            if curl -fsS "http://localhost:${RV_SSR_PORT}/health" >/dev/null 2>&1; then
+              echo "SSR server ready"
+              break
+            fi
+            sleep 1
+          done
+
+          bundle exec rspec spec/production --tag ~type:system

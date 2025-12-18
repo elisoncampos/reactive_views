@@ -41,7 +41,25 @@ RSpec.configure do |config|
   end
 
   # Reset browser state between tests to prevent pollution
-  config.after(:each, type: :system) do
+  config.after(:each, type: :system) do |example|
+    # If a system spec fails, dump browser console messages to make hydration errors obvious.
+    if example&.exception && page.driver.respond_to?(:browser) && page.driver.browser.respond_to?(:console_messages)
+      begin
+        messages = page.driver.browser.console_messages
+        next if messages.nil? || messages.empty?
+
+        warn "\n[system spec console] #{example.full_description}\n"
+        messages.each do |m|
+          type = (m.respond_to?(:type) ? m.type : nil) || (m.respond_to?(:level) ? m.level : nil) || "log"
+          text = (m.respond_to?(:message) ? m.message : nil) || (m.respond_to?(:text) ? m.text : nil) || m.to_s
+          warn "#{type}: #{text}"
+        end
+        warn "\n"
+      rescue StandardError => e
+        warn "[system spec console] failed to read console: #{e.class}: #{e.message}"
+      end
+    end
+
     # Clear all sessions to prevent test pollution
     begin
       Capybara.reset_sessions!

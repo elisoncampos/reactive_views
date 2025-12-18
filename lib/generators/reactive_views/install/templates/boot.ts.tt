@@ -67,12 +67,12 @@ function toPath(name: string): string {
 // =============================================================================
 
 // Import all components eagerly so they are available for hydration
-// Views components path: <%= component_views_path %>
-const rawComponentsFromViews = import.meta.glob('<%= component_views_glob %>', { 
+// Views components path: <%= @component_views_path %>
+const rawComponentsFromViews = import.meta.glob('<%= @component_views_glob %>', { 
   eager: true,
 });
-// JavaScript components path: <%= component_js_path %>
-const rawComponentsFromJs = import.meta.glob('<%= component_js_glob %>', { 
+// JavaScript components path: <%= @component_js_path %>
+const rawComponentsFromJs = import.meta.glob('<%= @component_js_glob %>', { 
   eager: true,
 });
 
@@ -81,12 +81,12 @@ const componentsFromViews: Record<string, any> = {};
 const componentsFromJs: Record<string, any> = {};
 
 for (const [path, module] of Object.entries(rawComponentsFromViews)) {
-  const normalized = path.replace('<%= component_views_glob_prefix %>', '/<%= component_views_path %>/');
+  const normalized = path.replace('<%= @component_views_glob_prefix %>', '/<%= @component_views_path %>/');
   componentsFromViews[normalized] = (module as any).default;
 }
 
 for (const [path, module] of Object.entries(rawComponentsFromJs)) {
-  const normalized = path.replace('<%= component_js_glob_prefix %>', '/<%= component_js_path %>/');
+  const normalized = path.replace('<%= @component_js_glob_prefix %>', '/<%= @component_js_path %>/');
   componentsFromJs[normalized] = (module as any).default;
 }
 
@@ -94,7 +94,7 @@ async function loadComponent(name: string) {
   // Attempt both conventional locations; try multiple filename shapes and extensions
   const rel = toPath(name);
   const leaf = rel.split('/').pop() as string;
-  const bases = ['/<%= component_views_path %>', '/<%= component_js_path %>'];
+  const bases = ['/<%= @component_views_path %>', '/<%= @component_js_path %>'];
   const exts = ['.tsx', '.jsx', '.ts', '.js'];
 
   // Combine both glob maps
@@ -193,7 +193,7 @@ async function hydrateIslands() {
     } catch (e) {
       if (import.meta.env?.DEV) {
         console.error(`[reactive_views] Failed to hydrate component: ${component}`, e);
-        console.error(`[reactive_views] Make sure vite.config.ts has resolve.alias configured for /<%= component_views_path %> and /<%= component_js_path %>`);
+        console.error(`[reactive_views] Make sure vite.config.ts has resolve.alias configured for /<%= @component_views_path %> and /<%= @component_js_path %>`);
       }
     }
   }
@@ -216,4 +216,10 @@ if (document.readyState === 'loading') {
 document.addEventListener('turbo:load', hydrateAll);
 document.addEventListener('turbo:frame-load', hydrateAll);
 
-
+// Clean up before Turbo caches the page for back/forward navigation
+// Without this, restored pages have data-reactive-hydrated="true" but no actual React instances
+document.addEventListener('turbo:before-cache', () => {
+  document.querySelectorAll('[data-reactive-hydrated]').forEach(el => {
+    el.removeAttribute('data-reactive-hydrated');
+  });
+});
