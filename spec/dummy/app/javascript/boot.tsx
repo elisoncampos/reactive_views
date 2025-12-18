@@ -71,7 +71,7 @@ function toPath(name: string): string {
 }
 
 // Import all components eagerly so they are available for hydration
-const rawComponentsFromViews = import.meta.glob('../views/components/**/*.{tsx,jsx,ts,js}', { 
+const rawComponentsFromViews = import.meta.glob('../views/components/**/*.{tsx,jsx,ts,js}', {
   eager: true,
 });
 
@@ -103,7 +103,7 @@ async function loadComponent(name: string) {
     for (let i = 0; i < nameVariants.length; i++) {
       const nameVar = nameVariants[i];
       const leafVar = leafVariants[i];
-      
+
       for (const ext of exts) {
         const candidates = [
           `${base}/${nameVar}${ext}`,
@@ -169,17 +169,17 @@ async function hydrateFullPages() {
 async function hydrateIslands() {
   const nodes = Array.from(document.querySelectorAll('[data-island-uuid][data-component]'));
   console.log(`[reactive_views] Found ${nodes.length} islands to hydrate`);
-  
+
   for (const node of nodes) {
     const el = node as HTMLElement;
-    
+
     // Skip if already hydrated
     if (el.dataset.reactiveHydrated === 'true') continue;
-    
+
     const uuid = el.dataset.islandUuid!;
     const component = el.dataset.component!;
     console.log(`[reactive_views] Hydrating component: ${component} (uuid: ${uuid})`);
-    
+
     try {
       const Comp = await loadComponent(component);
       const props = readProps(uuid);
