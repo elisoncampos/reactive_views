@@ -46,8 +46,9 @@ RSpec.describe 'Manifest Integrity', type: :production do
     it 'resolves application entry point' do
       skip 'Production assets not built' unless @build_result && manifest.any?
 
-      # Try various possible entry point names
+      # Try various possible entry point names (depends on vite config root)
       possible_entries = [
+        'entrypoints/application.js',
         'app/javascript/entrypoints/application.js',
         'application.js',
         'app/javascript/application.js'
