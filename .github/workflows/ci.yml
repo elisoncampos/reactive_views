@@ -34,7 +34,7 @@ jobs:
       - name: Install NPM dependencies
         run: |
           npm ci
-          cd spec/dummy && rm -rf node_modules && npm install
+          cd spec/dummy && rm -rf node_modules && npm install --include=dev
 
       - name: Run unit specs
         run: |
@@ -119,7 +119,7 @@ jobs:
       - name: Install NPM dependencies
         run: |
           npm ci
-          cd spec/dummy && rm -rf node_modules && npm install
+          cd spec/dummy && rm -rf node_modules && npm install --include=dev
 
       - name: Run system specs
         env:
@@ -211,7 +211,7 @@ jobs:
       - name: Install NPM dependencies
         run: |
           npm ci
-          cd spec/dummy && rm -rf node_modules && npm install
+          cd spec/dummy && rm -rf node_modules && npm install --include=dev
 
       - name: Build production assets
         run: |
@@ -281,7 +281,7 @@ jobs:
       - name: Install NPM dependencies
         run: |
           npm ci
-          cd spec/dummy && rm -rf node_modules && npm install
+          cd spec/dummy && rm -rf node_modules && npm install --include=dev
 
       - name: Download production assets
         uses: actions/download-artifact@v4
