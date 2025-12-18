@@ -9,6 +9,11 @@ end
 
 module ReactiveViews
   class Railtie < Rails::Railtie
+    # Load rake tasks
+    rake_tasks do
+      load File.expand_path("../../tasks/reactive_views.rake", __dir__)
+    end
+
     initializer "reactive_views.helpers" do
       ActiveSupport.on_load(:action_view) do
         include ReactiveViewsHelper

@@ -15,8 +15,12 @@ require_relative "reactive_views/props_builder"
 require_relative "reactive_views/template_handler"
 require_relative "reactive_views/resolver"
 require_relative "reactive_views/css_strategy"
+require_relative "reactive_views/ssr_process"
 
-require_relative "reactive_views/railtie" if defined?(Rails)
+if defined?(Rails)
+  require_relative "reactive_views/engine"
+  require_relative "reactive_views/railtie"
+end
 
 module ReactiveViews
   # Base error class for all ReactiveViews errors

@@ -98,6 +98,9 @@ RSpec.describe ReactiveViews::Configuration do
 
       allow(ReactiveViews::ComponentResolver).to receive(:resolve)
         .and_return('/path/to/Component.tsx')
+
+      # Prevent auto-spawn from changing the SSR URL
+      allow(ReactiveViews::SsrProcess).to receive(:ensure_running)
     end
 
     after do

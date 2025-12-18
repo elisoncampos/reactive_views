@@ -454,6 +454,9 @@ module ReactiveViews
       end
 
       def http_client
+        # Ensure SSR process is running (auto-spawns in production if not manually configured)
+        SsrProcess.ensure_running
+
         current_url = ReactiveViews.config.ssr_url
         http_client_mutex.synchronize do
           if !defined?(@http_client) || @http_client.nil? || @http_client.base_url != current_url

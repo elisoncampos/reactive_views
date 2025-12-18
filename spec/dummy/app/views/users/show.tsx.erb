@@ -1,0 +1,21 @@
+<% content_for :page_title, @page_title %>
+<% content_for :meta_description, "User profile for #{@user[:name]}" %>
+
+export default function UserProfile({
+  user,
+  page_title
+}: {
+  user: { id: number; name: string; bio: string };
+  page_title: string;
+}) {
+  return (
+    <main>
+      <h1>{page_title}</h1>
+      <div className="user-profile">
+        <h2>{user.name}</h2>
+        <p>{user.bio}</p>
+        <p>User ID: {user.id}</p>
+      </div>
+    </main>
+  );
+}

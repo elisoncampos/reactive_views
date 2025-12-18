@@ -1341,9 +1341,9 @@ module ReactiveViews
         msg = error_message.to_s
 
         if msg.include?("Could not connect") || msg.include?("ECONNREFUSED")
-          suggestions << "Make sure the SSR server is running on #{ReactiveViews.config.ssr_url}"
-          suggestions << "Check that 'bin/dev' or 'bundle exec rake reactive_views:ssr' is running"
-          suggestions << "Verify the RV_SSR_PORT environment variable is set correctly"
+          suggestions << "In development, ensure 'bin/dev' is running"
+          suggestions << "In production, ReactiveViews auto-starts the SSR server - check log/reactive_views_ssr.log for errors"
+          suggestions << "If managing SSR externally, verify RV_SSR_URL points to the correct address"
         elsif msg.include?("Component not found") || msg.include?("not found")
           suggestions << "Verify the component file exists in app/views/components/ or app/javascript/components/"
           suggestions << "Check that the component filename matches the PascalCase name (e.g., ExampleHello -> example_hello.tsx)"

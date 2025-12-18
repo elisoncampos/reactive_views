@@ -51,6 +51,9 @@ module ReactiveViews
       end
 
       def make_inference_request(tsx_content, content_digest, extension)
+        # Ensure SSR process is running (auto-spawns in production if not manually configured)
+        SsrProcess.ensure_running
+
         uri = URI.parse("#{ReactiveViews.config.ssr_url}/infer-props")
         http = Net::HTTP.new(uri.host, uri.port)
         http.read_timeout = ReactiveViews.config.ssr_timeout

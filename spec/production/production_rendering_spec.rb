@@ -153,22 +153,30 @@ RSpec.describe 'Production Rendering', type: :production do
       expect(result).to be_a(String)
     end
 
-    context 'with ssr_fallback_enabled' do
+    context 'when SSR server is unavailable' do
       before do
+        @original_url = ReactiveViews.config.ssr_url
         ReactiveViews.configure do |config|
-          config.ssr_fallback_enabled = true
           config.ssr_url = 'http://localhost:59999' # Non-existent server
+        end
+        # Prevent auto-spawn from changing the URL
+        allow(ReactiveViews::SsrProcess).to receive(:ensure_running)
+      end
+
+      after do
+        ReactiveViews.configure do |config|
+          config.ssr_url = @original_url
         end
       end
 
-      it 'returns empty HTML when SSR fails and fallback is enabled' do
+      it 'returns error marker string when SSR fails' do
         component_path = File.join(ProductionHelpers::DUMMY_APP_PATH, 'app', 'views', 'components', 'Counter.tsx')
 
-        # With fallback enabled, should return empty/error result string
+        # When SSR fails, the Renderer returns an error marker string
         result = ReactiveViews::Renderer.render(component_path, {})
 
-        # The behavior depends on implementation - result is a string
         expect(result).to be_a(String)
+        expect(result).to include('REACTIVE_VIEWS_ERROR')
       end
     end
   end
