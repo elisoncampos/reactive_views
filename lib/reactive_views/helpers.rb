@@ -63,9 +63,17 @@ module ReactiveViewsHelper
   end
 
   def resolve_ssr_url
-    # Allow configuration override, then environment variable, then default
-    ReactiveViews.config.ssr_url ||
-      ENV.fetch("REACTIVE_VIEWS_SSR_URL", "http://localhost:5175")
+    # In production, use the Rails proxy endpoint for same-origin requests
+    # This allows the SSR server to run on localhost without being publicly exposed
+    if production_mode?
+      # Return the Rails-mounted proxy path (relative URL)
+      "/reactive_views"
+    else
+      # In development, allow direct access for debugging
+      # Allow configuration override, then environment variable, then default
+      ReactiveViews.config.ssr_url ||
+        ENV.fetch("REACTIVE_VIEWS_SSR_URL", "http://localhost:5175")
+    end
   end
 
   def production_script_tags

@@ -375,19 +375,69 @@ module ReactiveViews
                           name
         end
 
-        # Try to parse as JSON if it looks like JSON
-        if value.start_with?("{", "[") || value == "true" || value == "false" || value =~ /^\d+$/
-          begin
-            props[original_name] = JSON.parse(value)
-          rescue JSON::ParserError
-            props[original_name] = value
-          end
-        else
-          props[original_name] = value
-        end
+        props[original_name] = parse_prop_value(value)
       end
 
       props
+    end
+
+    # Parse a prop value, handling JSX-style expressions and JSON
+    private_class_method def self.parse_prop_value(value)
+      return value if value.nil?
+
+      # Handle direct JSON values (arrays, objects) FIRST
+      # This must come before JSX expression check to avoid stripping outer braces from JSON
+      if value.start_with?("[") || (value.start_with?("{") && value.include?(":"))
+        begin
+          return JSON.parse(value)
+        rescue JSON::ParserError
+          # Fall through to other checks if JSON parsing fails
+        end
+      end
+
+      # Handle JSX-style expressions like {10}, {true}, {false}, {1.5}, {"string"}
+      # These come from ERB templates where users write <Component prop={value} />
+      # Note: JSON objects/arrays are handled above, so this only catches simple expressions
+      if value =~ /^\{(.+)\}$/
+        inner = ::Regexp.last_match(1).strip
+
+        # Try to parse the inner value
+        return true if inner == "true"
+        return false if inner == "false"
+        return nil if inner == "null" || inner == "nil"
+
+        # Try as integer
+        return inner.to_i if inner =~ /^-?\d+$/
+
+        # Try as float
+        return inner.to_f if inner =~ /^-?\d+\.\d+$/
+
+        # Try as JSON (for objects/arrays/strings inside JSX expressions)
+        begin
+          return JSON.parse(inner)
+        rescue JSON::ParserError
+          # If it looks like a quoted string, try parsing the whole thing
+          if inner.start_with?('"') || inner.start_with?("'")
+            begin
+              return JSON.parse(inner.gsub("'", '"'))
+            rescue JSON::ParserError
+              return inner
+            end
+          end
+          return inner
+        end
+      end
+
+      # Handle boolean strings
+      return true if value == "true"
+      return false if value == "false"
+
+      # Handle numeric strings
+      return value.to_i if value =~ /^-?\d+$/
+      return value.to_f if value =~ /^-?\d+\.\d+$/
+
+      # Default: return as string
+      value
     end
 
     private_class_method def self.create_island(node, component_name, uuid, props, ssr_html, context = nil)

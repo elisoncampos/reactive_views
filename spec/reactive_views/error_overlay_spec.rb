@@ -321,7 +321,7 @@ RSpec.describe ReactiveViews::ErrorOverlay do
         errors: connection_error
       )
 
-      expect(result).to include('SSR server is running')
+      expect(result).to include("bin/dev")
     end
 
     it 'generates appropriate suggestions for timeout errors' do

@@ -138,19 +138,16 @@ RSpec.describe 'Error Scenarios', type: :production do
   end
 
   describe 'graceful degradation' do
-    describe 'with ssr_fallback_enabled' do
+    describe 'when SSR fails' do
       before do
-        @original_fallback = ReactiveViews.config.ssr_fallback_enabled
         @original_url = ReactiveViews.config.ssr_url
         ReactiveViews.configure do |config|
-          config.ssr_fallback_enabled = true
           config.ssr_url = 'http://localhost:59999' # Non-existent
         end
       end
 
       after do
         ReactiveViews.configure do |config|
-          config.ssr_fallback_enabled = @original_fallback
           config.ssr_url = @original_url
         end
       end
@@ -164,16 +161,6 @@ RSpec.describe 'Error Scenarios', type: :production do
         expect(result).to be_a(String)
         expect(result.length).to be > 0
       end
-    end
-  end
-
-  describe 'retry behavior' do
-    it 'respects ssr_retry_count configuration' do
-      expect(ReactiveViews.config.ssr_retry_count).to be >= 0
-    end
-
-    it 'respects ssr_retry_delay configuration' do
-      expect(ReactiveViews.config.ssr_retry_delay).to be >= 0
     end
   end
 
