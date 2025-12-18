@@ -16,7 +16,10 @@ RSpec.describe 'Counter Component with useState', type: :system, js: true do
       expect(page).to have_css('[data-component="Counter"]', wait: 10)
       expect(page).to have_css('[data-island-uuid]', wait: 10)
 
-      # Wait for hydration to complete - wait for button to be interactive
+      # Wait for hydration to complete
+      expect(page).to have_css('[data-reactive-hydrated="true"]', wait: 10)
+
+      # Wait for button to be interactive
       expect(page).to have_css('[data-testid="increment-btn"]', wait: 10)
 
       # Check for JavaScript errors with timeout

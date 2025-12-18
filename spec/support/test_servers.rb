@@ -8,6 +8,8 @@ module TestServers
   VITE_PORT = 5174
   SSR_PORT = 5175
   SPEC_DUMMY_DIR = File.expand_path('../dummy', __dir__)
+  VITE_TEST_BASE = "/vite-test"
+  HOST = "127.0.0.1"
 
   class << self
     attr_reader :vite_pid, :ssr_pid
@@ -30,10 +32,10 @@ module TestServers
       end
 
       # Start Vite dev server
-      unless server_up?("http://localhost:#{VITE_PORT}/@vite/client")
+      unless server_up?("http://#{HOST}:#{VITE_PORT}#{VITE_TEST_BASE}/@vite/client")
         @vite_pid = spawn(
           { 'RV_VITE_PORT' => VITE_PORT.to_s },
-          'npx vite --config vite.test.config.ts',
+          'npm exec -- vite --config vite.test.config.ts',
           chdir: SPEC_DUMMY_DIR,
           out: ENV['CI'] ? $stdout : File::NULL,
           err: ENV['CI'] ? $stderr : File::NULL
@@ -45,7 +47,7 @@ module TestServers
       ssr_script = File.join(gem_root, 'node', 'ssr', 'server.mjs')
 
       # IMPORTANT: Run node in the gem root so it finds node_modules correctly
-      unless server_up?("http://localhost:#{SSR_PORT}/health")
+      unless server_up?("http://#{HOST}:#{SSR_PORT}/health")
         @ssr_pid = spawn(
           { 'RV_SSR_PORT' => SSR_PORT.to_s, 'PROJECT_ROOT' => SPEC_DUMMY_DIR },
           'node', ssr_script,
@@ -55,8 +57,8 @@ module TestServers
         )
       end
 
-      wait_for_server("http://localhost:#{VITE_PORT}")
-      wait_for_server("http://localhost:#{SSR_PORT}")
+      wait_for_server("http://#{HOST}:#{VITE_PORT}#{VITE_TEST_BASE}/@vite/client")
+      wait_for_server("http://#{HOST}:#{SSR_PORT}/health")
       puts 'Test servers started.'
     end
 
@@ -130,7 +132,7 @@ module TestServers
       end
 
       # Warm up the SSR server by pre-compiling commonly used components
-      warmup_ssr(url) if url.include?(SSR_PORT.to_s)
+      warmup_ssr("http://#{HOST}:#{SSR_PORT}") if url.include?(SSR_PORT.to_s)
     end
 
     def warmup_ssr(ssr_url)

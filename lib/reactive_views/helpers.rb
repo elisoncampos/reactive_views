@@ -100,6 +100,29 @@ module ReactiveViewsHelper
   def development_script_tags
     output = []
 
+    # In Rails test env, vite_rails typically prefers manifest mode and will raise if
+    # the test manifest isn't built. Our own system specs run with a Vite dev server,
+    # so we emit direct dev-server module URLs instead of relying on vite_rails helpers.
+    if defined?(Rails) && Rails.env.test?
+      vite_port = ENV.fetch("RV_VITE_PORT", "5174")
+      vite_base = "vite-test"
+      # Use 127.0.0.1 to avoid IPv6/localhost resolution differences in headless browsers.
+      dev_host = "http://127.0.0.1:#{vite_port}"
+
+      output << tag.script(type: "module", src: "#{dev_host}/#{vite_base}/@vite/client")
+      # @vitejs/plugin-react expects the react-refresh preamble to be installed.
+      preamble = <<~JS
+        import RefreshRuntime from "#{dev_host}/#{vite_base}/@react-refresh";
+        RefreshRuntime.injectIntoGlobalHook(window);
+        window.$RefreshReg$ = () => {};
+        window.$RefreshSig$ = () => (type) => type;
+        window.__vite_plugin_react_preamble_installed__ = true;
+      JS
+      output << content_tag(:script, preamble.html_safe, type: "module")
+      output << tag.script(type: "module", src: "#{dev_host}/#{vite_base}/entrypoints/application.js")
+      return output
+    end
+
     # Include Vite client tag for HMR in development
     output << vite_client_tag if respond_to?(:vite_client_tag)
 

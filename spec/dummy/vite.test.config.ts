@@ -16,7 +16,12 @@ export default defineConfig({
   server: {
     port,
     strictPort: true,
-    host: 'localhost',
+    host: '127.0.0.1',
+    // boot.tsx imports components from app/views/components (outside root),
+    // so we must explicitly allow it in the dev server.
+    fs: {
+      allow: [dummyRoot],
+    },
   },
 
   resolve: {
