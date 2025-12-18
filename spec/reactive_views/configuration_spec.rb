@@ -7,12 +7,22 @@ RSpec.describe ReactiveViews::Configuration do
   let(:config) { described_class.new }
 
   describe 'default values' do
+    around do |example|
+      # Isolate from CI environment variables
+      original_rv = ENV.delete('RV_SSR_URL')
+      original_legacy = ENV.delete('REACTIVE_VIEWS_SSR_URL')
+      example.run
+    ensure
+      ENV['RV_SSR_URL'] = original_rv if original_rv
+      ENV['REACTIVE_VIEWS_SSR_URL'] = original_legacy if original_legacy
+    end
+
     it 'is enabled by default' do
       expect(config.enabled).to be true
     end
 
     it 'has default SSR URL' do
-      expect(config.ssr_url).to eq('http://localhost:5175')
+      expect(described_class.new.ssr_url).to eq('http://localhost:5175')
     end
 
     it 'has default component views paths' do
@@ -128,14 +138,21 @@ RSpec.describe ReactiveViews::Configuration do
   end
 
   describe 'environment variable configuration' do
+    around do |example|
+      # Isolate from CI environment variables
+      original_rv = ENV.delete('RV_SSR_URL')
+      original_legacy = ENV.delete('REACTIVE_VIEWS_SSR_URL')
+      example.run
+    ensure
+      ENV['RV_SSR_URL'] = original_rv if original_rv
+      ENV['REACTIVE_VIEWS_SSR_URL'] = original_legacy if original_legacy
+    end
+
     it 'can read SSR URL from environment' do
-      # Test that the config reads from environment variables
-      # Use ClimateControl or similar to set env vars, or test the default behavior
+      ENV['RV_SSR_URL'] = 'http://custom-ssr:9000'
       new_config = described_class.new
 
-      # The default should be the value from ENV or fallback
-      expect(new_config.ssr_url).to be_a(String)
-      expect(new_config.ssr_url).to match(%r{^https?://})
+      expect(new_config.ssr_url).to eq('http://custom-ssr:9000')
     end
 
     it 'uses default SSR URL when env vars not set' do

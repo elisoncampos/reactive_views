@@ -471,6 +471,14 @@ module ReactiveViews
       def http_client_mutex
         @http_client_mutex ||= Mutex.new
       end
+
+      # Shutdown the HTTP client to clear stale connections (useful for tests)
+      def shutdown_client
+        http_client_mutex.synchronize do
+          @http_client&.shutdown if defined?(@http_client) && @http_client
+          @http_client = nil
+        end
+      end
     end
   end
 end

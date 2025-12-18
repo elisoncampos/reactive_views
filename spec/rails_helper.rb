@@ -17,6 +17,9 @@ end
 # Require the gem code
 require 'reactive_views'
 
+# Ensure helpers are included in ActionView (sometimes on_load doesn't fire in test)
+ActionView::Base.include(ReactiveViewsHelper) unless ActionView::Base.include?(ReactiveViewsHelper)
+
 require 'rspec/rails'
 require 'rspec/retry'
 require 'capybara/rails'
