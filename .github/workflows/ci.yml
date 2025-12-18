@@ -29,9 +29,7 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: |
-            package-lock.json
-            spec/dummy/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install NPM dependencies
         run: |
@@ -116,9 +114,7 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: |
-            package-lock.json
-            spec/dummy/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install NPM dependencies
         run: |
@@ -210,9 +206,7 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: |
-            package-lock.json
-            spec/dummy/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install NPM dependencies
         run: |
@@ -282,9 +276,7 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: |
-            package-lock.json
-            spec/dummy/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install NPM dependencies
         run: |
