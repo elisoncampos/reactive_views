@@ -47,7 +47,7 @@ export default defineConfig(({ mode }) => {
       
       rollupOptions: {
         input: {
-          application: path.resolve(import.meta.dirname, 'app/javascript/entrypoints/application.js'),
+          application: path.resolve(import.meta.dirname, 'app/javascript/boot.tsx'),
         },
         output: {
           // Consistent naming with content hashes for cache busting
