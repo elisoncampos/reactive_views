@@ -29,7 +29,8 @@ module ProductionHelpers
 
         system(
           { 'NODE_ENV' => 'production', 'RAILS_ENV' => 'production' },
-          'npx --no-install vite build --config vite.config.mts',
+          # Use local install (no network) for determinism.
+          'npm exec -- vite build --config vite.config.mts',
           out: out,
           err: err
         )

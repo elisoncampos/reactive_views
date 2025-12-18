@@ -3,12 +3,17 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 
 const port = parseInt(process.env.RV_VITE_PORT || '5174');
+const dummyRoot = import.meta.dirname;
+const sourceRoot = path.resolve(dummyRoot, 'app/javascript');
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const isProduction = mode === 'production';
 
   return {
+    // Align with vite-ruby (sourceCodeDir = app/javascript)
+    // so manifest keys are like "entrypoints/application.js" (not "app/javascript/...").
+    root: sourceRoot,
     plugins: [react()],
 
     // Base path for assets - can be overridden via ASSET_HOST env var for CDN
@@ -22,7 +27,7 @@ export default defineConfig(({ mode }) => {
 
     resolve: {
       alias: {
-        '@components': path.resolve(import.meta.dirname, 'app/views/components'),
+        '@components': path.resolve(dummyRoot, 'app/views/components'),
       },
     },
 
@@ -39,21 +44,23 @@ export default defineConfig(({ mode }) => {
       // Source maps in production for debugging (can be disabled)
       sourcemap: env.VITE_SOURCEMAP !== 'false',
 
-      // Output directory relative to public/
-      outDir: 'public/vite',
+      // Output directory relative to root (app/javascript)
+      outDir: path.resolve(dummyRoot, 'public/vite'),
 
       // Clean output directory before build
       emptyOutDir: true,
 
       rollupOptions: {
         input: {
-          application: path.resolve(import.meta.dirname, 'app/javascript/entrypoints/application.js'),
+          application: path.resolve(sourceRoot, 'entrypoints/application.js'),
         },
         output: {
           // Consistent naming with content hashes for cache busting
           entryFileNames: 'assets/[name]-[hash].js',
           chunkFileNames: 'assets/[name]-[hash].js',
           assetFileNames: 'assets/[name]-[hash][extname]',
+          // Keep hashes hex so production specs can validate fingerprints deterministically
+          hashCharacters: 'hex',
         },
       },
 

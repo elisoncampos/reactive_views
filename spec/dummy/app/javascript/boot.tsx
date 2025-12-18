@@ -131,7 +131,9 @@ function resolveSsrUrl() {
   if (meta?.getAttribute('content')) {
     return meta.getAttribute('content')!.replace(/\/$/, '');
   }
-  return 'http://localhost:5175';
+  // Never bake a dev-only host/port into production bundles.
+  // If no meta/global is provided, assume same-origin.
+  return window.location.origin;
 }
 
 async function hydrateFullPages() {

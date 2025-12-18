@@ -34,8 +34,10 @@ jobs:
     env:
       RAILS_ENV: test
       CI: true
+      REACTIVE_VIEWS_SKIP_SERVERS: "1"
       RV_VITE_PORT: 5174
       RV_SSR_PORT: 5175
+      RV_SSR_URL: "http://127.0.0.1:5175"
 
     steps:
       - uses: actions/checkout@v4
@@ -115,6 +117,7 @@ jobs:
     env:
       RAILS_ENV: test
       CI: true
+      REACTIVE_VIEWS_SKIP_SERVERS: "1"
       RV_VITE_PORT: 5174
       RV_SSR_PORT: 5175
 
@@ -189,6 +192,7 @@ jobs:
       RAILS_ENV: production
       NODE_ENV: production
       CI: true
+      REACTIVE_VIEWS_SKIP_SERVERS: "1"
       RV_VITE_PORT: 5174
       RV_SSR_PORT: 5175
       SECRET_KEY_BASE: test-secret-key-base-for-ci-only

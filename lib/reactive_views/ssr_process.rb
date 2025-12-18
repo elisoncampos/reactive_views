@@ -80,7 +80,17 @@ module ReactiveViews
       # In that case, we don't auto-spawn - they're managing SSR externally
       def manually_configured?
         # Check if RV_SSR_URL or REACTIVE_VIEWS_SSR_URL is explicitly set
-        ENV.key?("RV_SSR_URL") || ENV.key?("REACTIVE_VIEWS_SSR_URL")
+        return true if ENV.key?("RV_SSR_URL") || ENV.key?("REACTIVE_VIEWS_SSR_URL")
+
+        # If the app (or test suite) explicitly configured ssr_url, respect it.
+        # This is important for production specs, where we start SSR ourselves.
+        configured = begin
+          ReactiveViews.config&.ssr_url
+        rescue StandardError
+          nil
+        end
+
+        configured && !configured.to_s.empty?
       end
 
       def start_server
@@ -98,6 +108,14 @@ module ReactiveViews
 
         env = build_environment
         log_info("Starting SSR server on port #{@port}...")
+
+        # Ensure log directory exists (Rails apps often don't commit /log)
+        begin
+          require "fileutils"
+          FileUtils.mkdir_p(File.dirname(log_file_path))
+        rescue StandardError
+          # Best-effort; if it still fails, Process.spawn will raise with details.
+        end
 
         # Spawn the Node process
         @pid = Process.spawn(
