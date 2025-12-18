@@ -77,8 +77,9 @@ RSpec.describe 'Multiple Islands Rendering', type: :request do
 
       transformed = ReactiveViews::TagTransformer.transform(html)
 
-      # Extract all UUIDs
-      uuids = transformed.scan(/data-island-uuid="([^"]+)"/).flatten
+      # Extract all UUIDs (avoid brittle regex matching on quote style)
+      doc = Nokogiri::HTML.fragment(transformed)
+      uuids = doc.css('[data-island-uuid]').map { |n| n['data-island-uuid'] }.compact
 
       # HelloWorld has no props, so only 1 script tag (for ProductList)
       # Should have 3 UUIDs: 2 for div containers, 1 for ProductList script tag
