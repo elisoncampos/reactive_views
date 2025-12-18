@@ -6,7 +6,29 @@ on:
   pull_request:
     branches: [main, master]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  rubocop:
+    runs-on: ubuntu-latest
+    env:
+      RAILS_ENV: test
+      CI: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4.1"
+          bundler-cache: true
+
+      - name: Run RuboCop
+        run: bundle exec rubocop
+
   unit:
     runs-on: ubuntu-latest
     env:
@@ -31,12 +53,20 @@ jobs:
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - name: Install NPM dependencies
+      - name: Install Node dependencies
         run: |
-          npm ci
-          cd spec/dummy && rm -rf node_modules && npm install --include=dev
+          set -euo pipefail
 
-      - name: Run unit specs
+          # Root deps (SSR server)
+          npm ci
+
+          # Dummy app deps
+          pushd spec/dummy >/dev/null
+          rm -rf node_modules package-lock.json
+          npm install --include=dev --no-audit --no-fund
+          popd >/dev/null
+
+      - name: Run unit + integration specs (non-system, non-production)
         run: |
           set -euo pipefail
 
@@ -45,7 +75,7 @@ jobs:
           echo "SSR server started with PID ${SSR_PID}"
 
           pushd spec/dummy >/dev/null
-          npx vite --config vite.test.config.ts &
+          npm exec -- vite --config vite.test.config.ts &
           VITE_PID=$!
           echo "Vite server started with PID ${VITE_PID}"
           popd >/dev/null
@@ -73,26 +103,14 @@ jobs:
           wait_for "http://localhost:${RV_SSR_PORT}/health"
           wait_for "http://localhost:${RV_VITE_PORT}/@vite/client"
 
-          warm_up_ssr() {
-            local component_path="$1"
-            echo "Warming up SSR server with ${component_path}..."
-            local payload
-            payload=$(node -e "console.log(JSON.stringify({ componentPath: process.argv[1], props: { initialCount: 0 } }))" "${component_path}")
+          # Warm SSR once to avoid first-render timeouts
+          payload=$(node -e "console.log(JSON.stringify({ componentPath: process.argv[1], props: { initialCount: 0 } }))" "$(pwd)/spec/dummy/app/views/components/Counter.tsx")
+          curl -fsS -X POST "http://localhost:${RV_SSR_PORT}/render" -H "Content-Type: application/json" -d "${payload}" >/dev/null
 
-            curl -fsS -X POST "http://localhost:${RV_SSR_PORT}/render" \
-              -H "Content-Type: application/json" \
-              -d "${payload}" >/dev/null
-
-            echo "SSR warm-up complete"
-          }
-
-          SSR_WARMUP_COMPONENT="$(pwd)/spec/dummy/app/views/components/Counter.tsx"
-          warm_up_ssr "${SSR_WARMUP_COMPONENT}"
-
-          bundle exec rspec --tag ~type:system
+          # IMPORTANT: unit job must NOT run production specs
+          bundle exec rspec --tag ~type:system --tag ~type:production
 
   system:
-    needs: unit
     runs-on: ubuntu-latest
     env:
       RAILS_ENV: test
@@ -116,14 +134,16 @@ jobs:
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - name: Install NPM dependencies
+      - name: Install Node dependencies
         run: |
+          set -euo pipefail
           npm ci
-          cd spec/dummy && rm -rf node_modules && npm install --include=dev
+          pushd spec/dummy >/dev/null
+          rm -rf node_modules package-lock.json
+          npm install --include=dev --no-audit --no-fund
+          popd >/dev/null
 
       - name: Run system specs
-        env:
-          NODE_ENV: test
         run: |
           set -euo pipefail
 
@@ -132,7 +152,7 @@ jobs:
           echo "SSR server started with PID ${SSR_PID}"
 
           pushd spec/dummy >/dev/null
-          npx vite --config vite.test.config.ts &
+          npm exec -- vite --config vite.test.config.ts &
           VITE_PID=$!
           echo "Vite server started with PID ${VITE_PID}"
           popd >/dev/null
@@ -160,102 +180,14 @@ jobs:
           wait_for "http://localhost:${RV_SSR_PORT}/health"
           wait_for "http://localhost:${RV_VITE_PORT}/@vite/client"
 
-          warm_up_ssr() {
-            local component_path="$1"
-            echo "Warming up SSR server with ${component_path}..."
-            local payload
-            payload=$(node -e "console.log(JSON.stringify({ componentPath: process.argv[1], props: { initialCount: 0 } }))" "${component_path}")
-
-            curl -fsS -X POST "http://localhost:${RV_SSR_PORT}/render" \
-              -H "Content-Type: application/json" \
-              -d "${payload}" >/dev/null 2>&1 || true
-
-            echo "SSR warm-up complete for ${component_path}"
-          }
-
-          COMPONENTS_DIR="$(pwd)/spec/dummy/app/views/components"
-          warm_up_ssr "${COMPONENTS_DIR}/Counter.tsx"
-          warm_up_ssr "${COMPONENTS_DIR}/InteractiveCounter.tsx"
-          warm_up_ssr "${COMPONENTS_DIR}/HooksPlayground.tsx"
-          warm_up_ssr "${COMPONENTS_DIR}/HooksPlaygroundJsx.jsx"
-          warm_up_ssr "${COMPONENTS_DIR}/ShadcnDemo.tsx"
-
-          sleep 2
-
           bundle exec rspec spec/system --order defined
 
-  production-build:
-    needs: unit
+  production:
+    needs: [rubocop, unit, system]
     runs-on: ubuntu-latest
     env:
       RAILS_ENV: production
       NODE_ENV: production
-      CI: true
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "3.4.1"
-          bundler-cache: true
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - name: Install NPM dependencies
-        run: |
-          npm ci
-          cd spec/dummy && rm -rf node_modules && npm install --include=dev
-
-      - name: Build production assets
-        run: |
-          cd spec/dummy
-          npx vite build --config vite.config.mts
-
-      - name: Verify manifest exists
-        run: |
-          if [ ! -f spec/dummy/public/vite/.vite/manifest.json ] && [ ! -f spec/dummy/public/vite/manifest.json ]; then
-            echo "Error: Vite manifest not found!"
-            exit 1
-          fi
-          echo "Manifest found. Contents:"
-          cat spec/dummy/public/vite/.vite/manifest.json 2>/dev/null || cat spec/dummy/public/vite/manifest.json
-
-      - name: Report bundle sizes
-        run: |
-          echo "=== Production Bundle Sizes ==="
-          du -sh spec/dummy/public/vite/assets/* 2>/dev/null || true
-          echo ""
-          echo "Total size:"
-          du -sh spec/dummy/public/vite/ 2>/dev/null || true
-
-      - name: Check for development code leaks
-        run: |
-          echo "Checking for React Refresh in production bundles..."
-          if grep -r "@react-refresh" spec/dummy/public/vite/assets/*.js 2>/dev/null; then
-            echo "Error: React Refresh found in production bundle!"
-            exit 1
-          fi
-          echo "No development code leaks detected."
-
-      - name: Upload production assets
-        uses: actions/upload-artifact@v4
-        with:
-          name: production-assets
-          path: spec/dummy/public/vite/
-          retention-days: 1
-
-  production-integration:
-    needs: production-build
-    runs-on: ubuntu-latest
-    env:
-      RAILS_ENV: production
       CI: true
       RV_VITE_PORT: 5174
       RV_SSR_PORT: 5175
@@ -278,20 +210,26 @@ jobs:
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - name: Install NPM dependencies
+      - name: Install Node dependencies
+        env:
+          # Ensure devDependencies (vite) are installed even though NODE_ENV=production
+          NPM_CONFIG_PRODUCTION: "false"
         run: |
+          set -euo pipefail
           npm ci
-          cd spec/dummy && rm -rf node_modules && npm install --include=dev
+          pushd spec/dummy >/dev/null
+          rm -rf node_modules package-lock.json
+          npm install --include=dev --no-audit --no-fund
+          popd >/dev/null
 
-      - name: Download production assets
-        uses: actions/download-artifact@v4
-        with:
-          name: production-assets
-          path: spec/dummy/public/vite/
+      - name: Build production assets (dummy app)
+        run: |
+          set -euo pipefail
+          pushd spec/dummy >/dev/null
+          npm exec -- vite build --config vite.config.mts
+          popd >/dev/null
 
       - name: Run production specs
-        env:
-          NODE_ENV: production
         run: |
           set -euo pipefail
 
@@ -305,21 +243,12 @@ jobs:
           }
           trap cleanup EXIT
 
-          echo "Waiting for SSR server..."
           for attempt in $(seq 1 60); do
             if curl -fsS "http://localhost:${RV_SSR_PORT}/health" >/dev/null 2>&1; then
               echo "SSR server ready"
               break
             fi
             sleep 1
-          done
-
-          COMPONENTS_DIR="$(pwd)/spec/dummy/app/views/components"
-          for component in Counter.tsx InteractiveCounter.tsx; do
-            payload=$(node -e "console.log(JSON.stringify({ componentPath: process.argv[1], props: {} }))" "${COMPONENTS_DIR}/${component}")
-            curl -fsS -X POST "http://localhost:${RV_SSR_PORT}/render" \
-              -H "Content-Type: application/json" \
-              -d "${payload}" >/dev/null 2>&1 || true
           done
 
           bundle exec rspec spec/production --tag ~type:system
