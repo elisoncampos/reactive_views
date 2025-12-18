@@ -193,6 +193,7 @@ jobs:
       RV_SSR_PORT: 5175
       SECRET_KEY_BASE: test-secret-key-base-for-ci-only
       RAILS_SERVE_STATIC_FILES: true
+      REACTIVE_VIEWS_ALLOW_PRODUCTION_SPECS: "1"
 
     steps:
       - uses: actions/checkout@v4
