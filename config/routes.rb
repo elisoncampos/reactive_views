@@ -8,4 +8,3 @@ ReactiveViews::Engine.routes.draw do
       constraints: { id: /[a-f0-9]+/ },
       defaults: { format: "js" }
 end
-
