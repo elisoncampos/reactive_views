@@ -23,7 +23,14 @@ module ReactiveViews
       # This prevents HTML5 from treating <Component /> as an opening tag
       processed_html = html.gsub(%r{<([A-Z][a-zA-Z0-9]*)\s*([^>]*?)/\s*>}, '<\1 \2></\1>')
 
-      doc = Nokogiri::HTML5.fragment(processed_html)
+      # Detect if this is a full HTML document or just a fragment
+      # Nokogiri::HTML5.fragment discards <html>, <head>, <body> tags,
+      # so we need to use .parse for complete documents
+      doc = if full_html_document?(processed_html)
+              Nokogiri::HTML5.parse(processed_html)
+      else
+              Nokogiri::HTML5.fragment(processed_html)
+      end
 
       # Build component tree to detect nesting
       tree_result = build_component_tree(doc, component_name_map)
@@ -504,6 +511,13 @@ module ReactiveViews
 
     private_class_method def self.contains_pascal_case_tag?(html)
       html.match?(%r{<\s*[A-Z][a-zA-Z0-9]})
+    end
+
+    # Detect if the HTML is a full document (has <!DOCTYPE> or <html> tag)
+    # Full documents require Nokogiri::HTML5.parse instead of .fragment
+    # because .fragment discards structural tags like <html>, <head>, <body>
+    private_class_method def self.full_html_document?(html)
+      html.match?(/<\s*(!doctype|html[\s>])/i)
     end
   end
 end
