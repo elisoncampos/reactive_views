@@ -47,7 +47,7 @@ jobs:
         run: |
           if gh release view "v${{ steps.version.outputs.version }}" 2>/dev/null; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Release v${{ steps.version.outputs.version }} already exists; skipping publish."
+            echo "Release v${{ steps.version.outputs.version }} already exists."
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
             echo "No release for v${{ steps.version.outputs.version }}; will create and publish."
@@ -77,17 +77,8 @@ jobs:
             gh release create "$TAG" "$GEM" --title "$TAG" --generate-notes
           fi
 
-      - name: Configure RubyGems credentials (Trusted Publishing)
-        uses: rubygems/configure-rubygems-credentials@v1.0.0
-        with:
-          gem-server: "https://oidc-api-token.rubygems.org"
-          audience: "https://oidc-api-token.rubygems.org"
-
-      - name: Publish to RubyGems
+      # Official RubyGems Trusted Publishing publisher:
+      # This action does the OIDC exchange + pushes the gem.
+      - name: Publish to RubyGems (Trusted Publishing)
         if: steps.check.outputs.exists != 'true' || github.event.inputs.rubygems_only == 'true'
-        run: |
-          set -euo pipefail
-          V="${{ steps.version.outputs.version }}"
-          GEM="pkg/reactive_views-${V}.gem"
-          gem push "$GEM"
-          echo "Published reactive_views ${V} to RubyGems."
+        uses: rubygems/release-gem@v1
