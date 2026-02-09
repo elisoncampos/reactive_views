@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write   # required for RubyGems Trusted Publishing (OIDC)
 
     steps:
       - name: Checkout
@@ -75,21 +76,18 @@ jobs:
             gh release create "$TAG" "$GEM" --title "$TAG" --generate-notes
           fi
 
+      - name: Configure RubyGems credentials (Trusted Publishing)
+        if: steps.check.outputs.exists != 'true' || github.event.inputs.rubygems_only == 'true'
+        uses: rubygems/configure-rubygems-credentials@v1.0.0
+        with:
+          gem-server: "https://rubygems.org"
+          audience: "https://rubygems.org"
+
       - name: Publish to RubyGems
         if: steps.check.outputs.exists != 'true' || github.event.inputs.rubygems_only == 'true'
-        env:
-          RUBYGEMS_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
         run: |
           set -euo pipefail
           V="${{ steps.version.outputs.version }}"
           GEM="pkg/reactive_views-${V}.gem"
-          if [ -z "${RUBYGEMS_API_KEY:-}" ]; then
-            echo "RUBYGEMS_API_KEY not set; skipping RubyGems publish."
-            exit 0
-          fi
-          mkdir -p "$HOME/.gem"
-          echo "---" > "$HOME/.gem/credentials"
-          echo ":rubygems_api_key: ${RUBYGEMS_API_KEY}" >> "$HOME/.gem/credentials"
-          chmod 600 "$HOME/.gem/credentials"
           gem push "$GEM"
           echo "Published reactive_views ${V} to RubyGems."
