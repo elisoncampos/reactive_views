@@ -76,6 +76,7 @@ jobs:
             echo "RUBYGEMS_API_KEY not set; skipping RubyGems publish."
             exit 0
           fi
+          mkdir -p "$HOME/.gem"
           echo "---" > "$HOME/.gem/credentials"
           echo ":rubygems_api_key: ${RUBYGEMS_API_KEY}" >> "$HOME/.gem/credentials"
           chmod 600 "$HOME/.gem/credentials"
