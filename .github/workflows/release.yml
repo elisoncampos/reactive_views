@@ -3,6 +3,13 @@ name: Release
 on:
   push:
     branches: [release]
+  workflow_dispatch:
+    inputs:
+      rubygems_only:
+        description: "Only push to RubyGems (build + push, no GitHub release). Use when release already exists and you fixed an oops."
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: release
@@ -47,23 +54,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Build gem
-        if: steps.check.outputs.exists != 'true'
+        if: steps.check.outputs.exists != 'true' || github.event.inputs.rubygems_only == 'true'
         run: |
           mkdir -p pkg
           gem build reactive_views.gemspec --output pkg/reactive_views-${{ steps.version.outputs.version }}.gem
 
-      - name: Create GitHub release and publish to RubyGems
-        if: steps.check.outputs.exists != 'true'
+      - name: Create GitHub release
+        if: steps.check.outputs.exists != 'true' && github.event.inputs.rubygems_only != 'true'
         env:
-          RUBYGEMS_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           V="${{ steps.version.outputs.version }}"
           TAG="v${V}"
           GEM="pkg/reactive_views-${V}.gem"
-
-          # Create GitHub release with auto-generated notes (requires fetch-depth: 0)
           PREV=$(git describe --tags --abbrev=0 2>/dev/null || true)
           if [ -n "$PREV" ]; then
             gh release create "$TAG" "$GEM" --title "$TAG" --generate-notes --notes-start-tag "$PREV"
@@ -71,7 +75,14 @@ jobs:
             gh release create "$TAG" "$GEM" --title "$TAG" --generate-notes
           fi
 
-          # Publish to RubyGems
+      - name: Publish to RubyGems
+        if: steps.check.outputs.exists != 'true' || github.event.inputs.rubygems_only == 'true'
+        env:
+          RUBYGEMS_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
+        run: |
+          set -euo pipefail
+          V="${{ steps.version.outputs.version }}"
+          GEM="pkg/reactive_views-${V}.gem"
           if [ -z "${RUBYGEMS_API_KEY:-}" ]; then
             echo "RUBYGEMS_API_KEY not set; skipping RubyGems publish."
             exit 0
