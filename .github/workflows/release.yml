@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    branches: [release]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4.1"
+          bundler-cache: true
+
+      - name: Get version
+        id: version
+        run: |
+          V=$(sed -n 's/.*VERSION = "\(.*\)".*/\1/p' lib/reactive_views/version.rb)
+          echo "version=${V}" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: ${V}"
+
+      - name: Check if release already exists
+        id: check
+        run: |
+          if gh release view "v${{ steps.version.outputs.version }}" 2>/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release v${{ steps.version.outputs.version }} already exists; skipping publish."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "No release for v${{ steps.version.outputs.version }}; will create and publish."
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Build gem
+        if: steps.check.outputs.exists != 'true'
+        run: |
+          mkdir -p pkg
+          gem build reactive_views.gemspec --output pkg/reactive_views-${{ steps.version.outputs.version }}.gem
+
+      - name: Create GitHub release and publish to RubyGems
+        if: steps.check.outputs.exists != 'true'
+        env:
+          RUBYGEMS_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          V="${{ steps.version.outputs.version }}"
+          TAG="v${V}"
+          GEM="pkg/reactive_views-${V}.gem"
+
+          # Create GitHub release with auto-generated notes (requires fetch-depth: 0)
+          PREV=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          if [ -n "$PREV" ]; then
+            gh release create "$TAG" "$GEM" --title "$TAG" --generate-notes --notes-start-tag "$PREV"
+          else
+            gh release create "$TAG" "$GEM" --title "$TAG" --generate-notes
+          fi
+
+          # Publish to RubyGems
+          if [ -z "${RUBYGEMS_API_KEY:-}" ]; then
+            echo "RUBYGEMS_API_KEY not set; skipping RubyGems publish."
+            exit 0
+          fi
+          echo "---" > "$HOME/.gem/credentials"
+          echo ":rubygems_api_key: ${RUBYGEMS_API_KEY}" >> "$HOME/.gem/credentials"
+          chmod 600 "$HOME/.gem/credentials"
+          gem push "$GEM"
+          echo "Published reactive_views ${V} to RubyGems."

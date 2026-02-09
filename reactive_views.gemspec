@@ -20,10 +20,20 @@ Gem::Specification.new do |spec|
   spec.metadata['rubygems_mfa_required'] = 'true'
 
   gemspec = File.basename(__FILE__)
+  # Exclude paths that should not be packaged (dev, CI, docs, test tooling)
+  exclude_prefixes = %w[
+    bin/ test/ spec/ features/ .git .github appveyor Gemfile docs/
+  ]
+  exclude_exact = %w[
+    .gitignore .rspec Rakefile run_specs.rb RELEASING.md
+    lib/tasks/reactive_views_test.rake
+  ]
   spec.files = IO.popen(%w[git ls-files -z], chdir: __dir__, err: IO::NULL) do |ls|
     ls.readlines("\x0", chomp: true).reject do |f|
       (f == gemspec) ||
-        f.start_with?(*%w[bin/ test/ spec/ features/ .git .github appveyor Gemfile])
+        f.start_with?(*exclude_prefixes) ||
+        f.start_with?(".rubocop") ||
+        exclude_exact.include?(f)
     end
   end
 

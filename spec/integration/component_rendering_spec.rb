@@ -57,3 +57,4 @@ RSpec.describe 'Component Rendering Integration', type: :request do
     end
   end
 end
+
